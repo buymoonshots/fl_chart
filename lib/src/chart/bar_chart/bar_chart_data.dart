@@ -651,6 +651,7 @@ class BarTouchData extends FlTouchData<BarTouchResponse> with EquatableMixin {
     BaseTouchCallback<BarTouchResponse>? touchCallback,
     MouseCursorResolver<BarTouchResponse>? mouseCursorResolver,
     Duration? longPressDuration,
+    Duration? touchDelay,
     BarTouchTooltipData? touchTooltipData,
     EdgeInsets? touchExtraThreshold,
     bool? allowTouchBarBackDraw,
@@ -664,6 +665,7 @@ class BarTouchData extends FlTouchData<BarTouchResponse> with EquatableMixin {
           touchCallback,
           mouseCursorResolver,
           longPressDuration,
+          touchDelay,
         );
 
   /// Configs of how touch tooltip popup.
@@ -686,6 +688,7 @@ class BarTouchData extends FlTouchData<BarTouchResponse> with EquatableMixin {
     BaseTouchCallback<BarTouchResponse>? touchCallback,
     MouseCursorResolver<BarTouchResponse>? mouseCursorResolver,
     Duration? longPressDuration,
+    Duration? touchDelay,
     BarTouchTooltipData? touchTooltipData,
     EdgeInsets? touchExtraThreshold,
     bool? allowTouchBarBackDraw,
@@ -696,6 +699,7 @@ class BarTouchData extends FlTouchData<BarTouchResponse> with EquatableMixin {
         touchCallback: touchCallback ?? this.touchCallback,
         mouseCursorResolver: mouseCursorResolver ?? this.mouseCursorResolver,
         longPressDuration: longPressDuration ?? this.longPressDuration,
+        touchDelay: touchDelay ?? this.touchDelay,
         touchTooltipData: touchTooltipData ?? this.touchTooltipData,
         touchExtraThreshold: touchExtraThreshold ?? this.touchExtraThreshold,
         allowTouchBarBackDraw:
@@ -710,6 +714,7 @@ class BarTouchData extends FlTouchData<BarTouchResponse> with EquatableMixin {
         touchCallback,
         mouseCursorResolver,
         longPressDuration,
+        touchDelay,
         touchTooltipData,
         touchExtraThreshold,
         allowTouchBarBackDraw,

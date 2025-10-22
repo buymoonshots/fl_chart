@@ -59,6 +59,7 @@ class LineChartData extends AxisChartData with EquatableMixin {
     super.clipData = const FlClipData.none(),
     super.backgroundColor,
     super.rotationQuarterTurns,
+    this.maskData,
   }) : super(
           minX: minX ?? double.nan,
           maxX: maxX ?? double.nan,
@@ -82,6 +83,9 @@ class LineChartData extends AxisChartData with EquatableMixin {
   /// An important point is that you have to disable the default touch behaviour
   /// to show the tooltip manually, see [LineTouchData.handleBuiltInTouches].
   final List<ShowingTooltipIndicators> showingTooltipIndicators;
+
+  /// Configuration for drawing masks when a point is selected
+  final LineMaskData? maskData;
 
   /// Lerps a [BaseChartData] based on [t] value, check [Tween.lerp].
   @override
@@ -109,6 +113,7 @@ class LineChartData extends AxisChartData with EquatableMixin {
             lerpBetweenBarsDataList(a.betweenBarsData, b.betweenBarsData, t)!,
         lineTouchData: b.lineTouchData,
         showingTooltipIndicators: b.showingTooltipIndicators,
+        maskData: b.maskData,
         rotationQuarterTurns: b.rotationQuarterTurns,
       );
     } else {
@@ -137,6 +142,7 @@ class LineChartData extends AxisChartData with EquatableMixin {
     FlClipData? clipData,
     Color? backgroundColor,
     int? rotationQuarterTurns,
+    LineMaskData? maskData,
   }) =>
       LineChartData(
         lineBarsData: lineBarsData ?? this.lineBarsData,
@@ -158,6 +164,7 @@ class LineChartData extends AxisChartData with EquatableMixin {
         clipData: clipData ?? this.clipData,
         backgroundColor: backgroundColor ?? this.backgroundColor,
         rotationQuarterTurns: rotationQuarterTurns ?? this.rotationQuarterTurns,
+        maskData: maskData ?? this.maskData,
       );
 
   /// Used for equality check, see [EquatableMixin].
@@ -169,6 +176,7 @@ class LineChartData extends AxisChartData with EquatableMixin {
         extraLinesData,
         lineTouchData,
         showingTooltipIndicators,
+        maskData,
         gridData,
         borderData,
         rangeAnnotations,
@@ -900,6 +908,7 @@ class LineTouchData extends FlTouchData<LineTouchResponse> with EquatableMixin {
     BaseTouchCallback<LineTouchResponse>? touchCallback,
     MouseCursorResolver<LineTouchResponse>? mouseCursorResolver,
     Duration? longPressDuration,
+    Duration? touchDelay,
     this.touchTooltipData = const LineTouchTooltipData(),
     this.getTouchedSpotIndicator = defaultTouchedIndicators,
     this.touchSpotThreshold = 10,
@@ -912,6 +921,7 @@ class LineTouchData extends FlTouchData<LineTouchResponse> with EquatableMixin {
           touchCallback,
           mouseCursorResolver,
           longPressDuration,
+          touchDelay,
         );
 
   /// Configs of how touch tooltip popup.
@@ -945,6 +955,7 @@ class LineTouchData extends FlTouchData<LineTouchResponse> with EquatableMixin {
     BaseTouchCallback<LineTouchResponse>? touchCallback,
     MouseCursorResolver<LineTouchResponse>? mouseCursorResolver,
     Duration? longPressDuration,
+    Duration? touchDelay,
     LineTouchTooltipData? touchTooltipData,
     GetTouchedSpotIndicator? getTouchedSpotIndicator,
     double? touchSpotThreshold,
@@ -958,6 +969,7 @@ class LineTouchData extends FlTouchData<LineTouchResponse> with EquatableMixin {
         touchCallback: touchCallback ?? this.touchCallback,
         mouseCursorResolver: mouseCursorResolver ?? this.mouseCursorResolver,
         longPressDuration: longPressDuration ?? this.longPressDuration,
+        touchDelay: touchDelay ?? this.touchDelay,
         touchTooltipData: touchTooltipData ?? this.touchTooltipData,
         getTouchedSpotIndicator:
             getTouchedSpotIndicator ?? this.getTouchedSpotIndicator,
@@ -975,6 +987,7 @@ class LineTouchData extends FlTouchData<LineTouchResponse> with EquatableMixin {
         touchCallback,
         mouseCursorResolver,
         longPressDuration,
+        touchDelay,
         touchTooltipData,
         getTouchedSpotIndicator,
         touchSpotThreshold,
@@ -1371,4 +1384,73 @@ class LineChartDataTween extends Tween<LineChartData> {
   /// Lerps a [LineChartData] based on [t] value, check [Tween.lerp].
   @override
   LineChartData lerp(double t) => begin!.lerp(begin!, end!, t);
+}
+
+/// Configuration for drawing masks when a point is selected in the line chart
+class LineMaskData with EquatableMixin {
+  /// Creates a mask configuration for the line chart
+  const LineMaskData({
+    this.show = true,
+    this.color = const Color(0x40000000),
+    this.horizontalMaskSize = 50.0,
+    this.verticalMaskSize = 50.0,
+    this.maskPosition = LineMaskPosition.right,
+  });
+
+  /// Whether to show the mask when a point is selected
+  final bool show;
+
+  /// Color of the mask overlay
+  final Color color;
+
+  /// Size of the horizontal mask (for vertical lines)
+  final double horizontalMaskSize;
+
+  /// Size of the vertical mask (for horizontal lines)
+  final double verticalMaskSize;
+
+  /// Position of the mask relative to the selected point
+  final LineMaskPosition maskPosition;
+
+  /// Copies current [LineMaskData] to a new [LineMaskData],
+  /// and replaces provided values.
+  LineMaskData copyWith({
+    bool? show,
+    Color? color,
+    double? horizontalMaskSize,
+    double? verticalMaskSize,
+    LineMaskPosition? maskPosition,
+  }) =>
+      LineMaskData(
+        show: show ?? this.show,
+        color: color ?? this.color,
+        horizontalMaskSize: horizontalMaskSize ?? this.horizontalMaskSize,
+        verticalMaskSize: verticalMaskSize ?? this.verticalMaskSize,
+        maskPosition: maskPosition ?? this.maskPosition,
+      );
+
+  /// Used for equality check, see [EquatableMixin].
+  @override
+  List<Object?> get props => [
+        show,
+        color,
+        horizontalMaskSize,
+        verticalMaskSize,
+        maskPosition,
+      ];
+}
+
+/// Position of the mask relative to the selected point
+enum LineMaskPosition {
+  /// Mask appears to the right of the vertical line
+  right,
+
+  /// Mask appears to the left of the vertical line
+  left,
+
+  /// Mask appears below the horizontal line
+  bottom,
+
+  /// Mask appears above the horizontal line
+  top,
 }
