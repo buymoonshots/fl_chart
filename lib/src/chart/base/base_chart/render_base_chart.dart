@@ -1,4 +1,6 @@
 // coverage:ignore-file
+import 'dart:async';
+
 import 'package:fl_chart/src/chart/base/base_chart/base_chart_data.dart';
 import 'package:fl_chart/src/chart/base/base_chart/fl_touch_event.dart';
 import 'package:flutter/cupertino.dart';
@@ -41,11 +43,19 @@ abstract class RenderBaseChart<R extends BaseTouchResponse> extends RenderBox
     _touchCallback = value?.touchCallback;
     _mouseCursorResolver = value?.mouseCursorResolver;
     _longPressDuration = value?.longPressDuration;
+    _touchDelay = value?.touchDelay;
   }
 
   BaseTouchCallback<R>? _touchCallback;
   MouseCursorResolver<R>? _mouseCursorResolver;
   Duration? _longPressDuration;
+  Duration? _touchDelay;
+
+  // Touch delay management
+  Timer? _touchDelayTimer;
+  FlTouchEvent? _pendingTouchEvent;
+  R? _pendingTouchResponse;
+  bool _isUserInteracting = false;
 
   MouseCursor _latestMouseCursor = MouseCursor.defer;
 
@@ -71,6 +81,8 @@ abstract class RenderBaseChart<R extends BaseTouchResponse> extends RenderBox
         _notifyTouchEvent(FlPanDownEvent(dragDownDetails));
       }
       ..onStart = (dragStartDetails) {
+        // Cancel any pending touch callback when pan starts
+        _cancelPendingTouchCallback();
         _notifyTouchEvent(FlPanStartEvent(dragStartDetails));
       }
       ..onUpdate = (dragUpdateDetails) {
@@ -161,17 +173,63 @@ abstract class RenderBaseChart<R extends BaseTouchResponse> extends RenderBox
   ///
   /// We get a [BaseTouchResponse] using [getResponseAtLocation] for events which contains a localPosition.
   /// Then we invoke [_touchCallback] using the [event] and [response].
+  /// If [touchDelay] is set, the callback will be delayed by that duration.
+  /// If a pan gesture starts during the delay, the callback will be cancelled.
+  /// If the user is already interacting with the chart, delays are skipped for immediate response.
   void _notifyTouchEvent(FlTouchEvent event) {
     if (_touchCallback == null) {
       return;
     }
+
+    // Cancel any existing delay timer
+    _touchDelayTimer?.cancel();
+    _touchDelayTimer = null;
+
     final localPosition = event.localPosition;
     R? response;
     if (localPosition != null) {
       response = getResponseAtLocation(localPosition);
     }
-    _touchCallback!(event, response);
 
+    // Check if we should delay the touch callback
+    // Skip delay if user is already interacting with the chart
+    bool shouldDelay = _touchDelay != null &&
+        _touchDelay! > Duration.zero &&
+        !_isUserInteracting;
+
+    if (shouldDelay) {
+      // Store the pending event and response
+      _pendingTouchEvent = event;
+      _pendingTouchResponse = response;
+
+      // Start the delay timer
+      _touchDelayTimer = Timer(_touchDelay!, () {
+        if (_pendingTouchEvent != null && _pendingTouchResponse != null) {
+          // Mark as interacting when callback is invoked
+          _isUserInteracting = true;
+          _touchCallback!(_pendingTouchEvent!, _pendingTouchResponse);
+        }
+        _pendingTouchEvent = null;
+        _pendingTouchResponse = null;
+      });
+    } else {
+      // No delay or user is already interacting, invoke callback immediately
+      if (!_isUserInteracting) {
+        _isUserInteracting = true;
+      }
+      _touchCallback!(event, response);
+    }
+
+    // Reset interaction state on actual touch end events
+    // Don't reset on FlTapCancelEvent as it's part of long press gesture
+    // Only reset on events that truly end the interaction
+    if (event is FlTapUpEvent ||
+        event is FlPanEndEvent ||
+        event is FlLongPressEnd) {
+      _isUserInteracting = false;
+    }
+
+    // Update mouse cursor (immediate for hover events, delayed for others)
     if (_mouseCursorResolver == null) {
       _latestMouseCursor = MouseCursor.defer;
     } else {
@@ -193,6 +251,20 @@ abstract class RenderBaseChart<R extends BaseTouchResponse> extends RenderBox
   /// When touch/pointer event happens, we send it to the user alongside the [FlTouchEvent] using [_touchCallback]
   R getResponseAtLocation(Offset localPosition);
 
+  /// Cancels any pending touch callback and clears the delay timer.
+  /// This is called when a pan gesture starts to allow scroll views to take precedence.
+  void _cancelPendingTouchCallback() {
+    _touchDelayTimer?.cancel();
+    _touchDelayTimer = null;
+    _pendingTouchEvent = null;
+    _pendingTouchResponse = null;
+    // Only reset interaction state if we're cancelling due to scroll conflict
+    // Don't reset if user is already actively interacting
+    if (!_isUserInteracting) {
+      _isUserInteracting = false;
+    }
+  }
+
   @override
   void attach(PipelineOwner owner) {
     super.attach(owner);
@@ -202,6 +274,10 @@ abstract class RenderBaseChart<R extends BaseTouchResponse> extends RenderBox
   @override
   void detach() {
     _validForMouseTracker = false;
+    _cancelPendingTouchCallback();
+    panGestureRecognizer.dispose();
+    tapGestureRecognizer.dispose();
+    longPressGestureRecognizer.dispose();
     super.detach();
   }
 }

@@ -30,11 +30,16 @@ class CandlestickChartData extends AxisChartData with EquatableMixin {
   /// on top of each [CandlestickChartData.candleSpots] using [showingTooltipIndicators],
   /// just put spot indices you want to show it on top of them.
   ///
+  /// [CandlestickChart] draws some horizontal or vertical lines on above or below of everything,
+  /// they are useful in some scenarios, for example you can show average line, you can fill
+  /// [extraLinesData] property to have your extra lines.
+  ///
   /// [clipData] forces the [CandlestickChart] to draw lines inside the chart bounding box.
   CandlestickChartData({
     List<CandlestickSpot>? candlestickSpots,
     FlCandlestickPainter? candlestickPainter,
     FlTitlesData? titlesData,
+    ExtraLinesData? extraLinesData,
     CandlestickTouchData? candlestickTouchData,
     List<int>? showingTooltipIndicators,
     FlGridData? gridData,
@@ -50,6 +55,7 @@ class CandlestickChartData extends AxisChartData with EquatableMixin {
     super.backgroundColor,
     super.rotationQuarterTurns,
     this.touchedPointIndicator,
+    this.maskData,
   })  : candlestickSpots = candlestickSpots ?? const [],
         candlestickPainter = candlestickPainter ?? DefaultCandlestickPainter(),
         candlestickTouchData = candlestickTouchData ?? CandlestickTouchData(),
@@ -57,6 +63,7 @@ class CandlestickChartData extends AxisChartData with EquatableMixin {
         super(
           gridData: gridData ?? const FlGridData(),
           titlesData: titlesData ?? const FlTitlesData(),
+          extraLinesData: extraLinesData ?? const ExtraLinesData(),
           clipData: clipData ?? const FlClipData.none(),
           minX: minX ??
               CandlestickChartHelper.calculateMaxAxisValues(
@@ -108,6 +115,9 @@ class CandlestickChartData extends AxisChartData with EquatableMixin {
   /// if you want to have customized [touchedPointIndicator]
   final AxisSpotIndicator? touchedPointIndicator;
 
+  /// Configuration for drawing masks when a point is selected
+  final CandlestickMaskData? maskData;
+
   /// Lerps a [CandlestickChartData] based on [t] value, check [Tween.lerp].
   @override
   CandlestickChartData lerp(BaseChartData a, BaseChartData b, double t) {
@@ -121,6 +131,8 @@ class CandlestickChartData extends AxisChartData with EquatableMixin {
           t,
         ),
         titlesData: FlTitlesData.lerp(a.titlesData, b.titlesData, t),
+        extraLinesData:
+            ExtraLinesData.lerp(a.extraLinesData, b.extraLinesData, t),
         candlestickTouchData: b.candlestickTouchData,
         showingTooltipIndicators: lerpIntList(
           a.showingTooltipIndicators,
@@ -144,6 +156,7 @@ class CandlestickChartData extends AxisChartData with EquatableMixin {
         backgroundColor: Color.lerp(a.backgroundColor, b.backgroundColor, t),
         rotationQuarterTurns: b.rotationQuarterTurns,
         touchedPointIndicator: b.touchedPointIndicator,
+        maskData: b.maskData,
       );
     } else {
       throw Exception('Illegal State');
@@ -156,6 +169,7 @@ class CandlestickChartData extends AxisChartData with EquatableMixin {
     List<CandlestickSpot>? candlestickSpots,
     FlCandlestickPainter? candlestickPainter,
     FlTitlesData? titlesData,
+    ExtraLinesData? extraLinesData,
     CandlestickTouchData? candlestickTouchData,
     List<int>? showingTooltipIndicators,
     FlGridData? gridData,
@@ -171,11 +185,13 @@ class CandlestickChartData extends AxisChartData with EquatableMixin {
     Color? backgroundColor,
     int? rotationQuarterTurns,
     AxisSpotIndicator? touchedPointIndicator,
+    CandlestickMaskData? maskData,
   }) =>
       CandlestickChartData(
         candlestickSpots: candlestickSpots ?? this.candlestickSpots,
         candlestickPainter: candlestickPainter ?? this.candlestickPainter,
         titlesData: titlesData ?? this.titlesData,
+        extraLinesData: extraLinesData ?? this.extraLinesData,
         candlestickTouchData: candlestickTouchData ?? this.candlestickTouchData,
         showingTooltipIndicators:
             showingTooltipIndicators ?? this.showingTooltipIndicators,
@@ -193,6 +209,7 @@ class CandlestickChartData extends AxisChartData with EquatableMixin {
         rotationQuarterTurns: rotationQuarterTurns ?? this.rotationQuarterTurns,
         touchedPointIndicator:
             touchedPointIndicator ?? this.touchedPointIndicator,
+        maskData: maskData ?? this.maskData,
       );
 
   /// Used for equality check, see [EquatableMixin].
@@ -204,6 +221,7 @@ class CandlestickChartData extends AxisChartData with EquatableMixin {
         showingTooltipIndicators,
         gridData,
         titlesData,
+        extraLinesData,
         minX,
         maxX,
         baselineX,
@@ -216,6 +234,7 @@ class CandlestickChartData extends AxisChartData with EquatableMixin {
         borderData,
         rotationQuarterTurns,
         touchedPointIndicator,
+        maskData,
       ];
 }
 
@@ -348,6 +367,7 @@ class CandlestickTouchData extends FlTouchData<CandlestickTouchResponse>
     BaseTouchCallback<CandlestickTouchResponse>? touchCallback,
     MouseCursorResolver<CandlestickTouchResponse>? mouseCursorResolver,
     Duration? longPressDuration,
+    Duration? touchDelay,
     CandlestickTouchTooltipData? touchTooltipData,
     bool? handleBuiltInTouches,
     double? touchSpotThreshold,
@@ -359,6 +379,7 @@ class CandlestickTouchData extends FlTouchData<CandlestickTouchResponse>
           touchCallback,
           mouseCursorResolver,
           longPressDuration,
+          touchDelay,
         );
 
   /// show a tooltip on touched spots
@@ -378,6 +399,7 @@ class CandlestickTouchData extends FlTouchData<CandlestickTouchResponse>
     BaseTouchCallback<CandlestickTouchResponse>? touchCallback,
     MouseCursorResolver<CandlestickTouchResponse>? mouseCursorResolver,
     Duration? longPressDuration,
+    Duration? touchDelay,
     CandlestickTouchTooltipData? touchTooltipData,
     bool? handleBuiltInTouches,
     double? touchSpotThreshold,
@@ -387,6 +409,7 @@ class CandlestickTouchData extends FlTouchData<CandlestickTouchResponse>
         touchCallback: touchCallback ?? this.touchCallback,
         mouseCursorResolver: mouseCursorResolver ?? this.mouseCursorResolver,
         longPressDuration: longPressDuration ?? this.longPressDuration,
+        touchDelay: touchDelay ?? this.touchDelay,
         touchTooltipData: touchTooltipData ?? this.touchTooltipData,
         handleBuiltInTouches: handleBuiltInTouches ?? this.handleBuiltInTouches,
         touchSpotThreshold: touchSpotThreshold ?? this.touchSpotThreshold,
@@ -399,6 +422,7 @@ class CandlestickTouchData extends FlTouchData<CandlestickTouchResponse>
         touchCallback,
         mouseCursorResolver,
         longPressDuration,
+        touchDelay,
         touchTooltipData,
         handleBuiltInTouches,
         touchSpotThreshold,
@@ -996,4 +1020,73 @@ class CandlestickChartDataTween extends Tween<CandlestickChartData> {
   /// Lerps a [CandlestickChartData] based on [t] value, check [Tween.lerp].
   @override
   CandlestickChartData lerp(double t) => begin!.lerp(begin!, end!, t);
+}
+
+/// Configuration for drawing masks when a point is selected in the candlestick chart
+class CandlestickMaskData with EquatableMixin {
+  /// Creates a mask configuration for the candlestick chart
+  const CandlestickMaskData({
+    this.show = true,
+    this.color = const Color(0x40000000),
+    this.horizontalMaskSize = 50.0,
+    this.verticalMaskSize = 50.0,
+    this.maskPosition = CandlestickMaskPosition.right,
+  });
+
+  /// Whether to show the mask when a point is selected
+  final bool show;
+
+  /// Color of the mask overlay
+  final Color color;
+
+  /// Size of the horizontal mask (for vertical lines)
+  final double horizontalMaskSize;
+
+  /// Size of the vertical mask (for horizontal lines)
+  final double verticalMaskSize;
+
+  /// Position of the mask relative to the selected point
+  final CandlestickMaskPosition maskPosition;
+
+  /// Copies current [CandlestickMaskData] to a new [CandlestickMaskData],
+  /// and replaces provided values.
+  CandlestickMaskData copyWith({
+    bool? show,
+    Color? color,
+    double? horizontalMaskSize,
+    double? verticalMaskSize,
+    CandlestickMaskPosition? maskPosition,
+  }) =>
+      CandlestickMaskData(
+        show: show ?? this.show,
+        color: color ?? this.color,
+        horizontalMaskSize: horizontalMaskSize ?? this.horizontalMaskSize,
+        verticalMaskSize: verticalMaskSize ?? this.verticalMaskSize,
+        maskPosition: maskPosition ?? this.maskPosition,
+      );
+
+  /// Used for equality check, see [EquatableMixin].
+  @override
+  List<Object?> get props => [
+        show,
+        color,
+        horizontalMaskSize,
+        verticalMaskSize,
+        maskPosition,
+      ];
+}
+
+/// Position of the mask relative to the selected point
+enum CandlestickMaskPosition {
+  /// Mask appears to the right of the vertical line
+  right,
+
+  /// Mask appears to the left of the vertical line
+  left,
+
+  /// Mask appears below the horizontal line
+  bottom,
+
+  /// Mask appears above the horizontal line
+  top,
 }

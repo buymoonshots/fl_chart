@@ -47,6 +47,9 @@ class LineChartPainter extends AxisChartPainter<LineChartData> {
       ..strokeWidth = 1.0;
 
     _clipPaint = Paint();
+    _maskPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = const Color(0x40000000);
   }
 
   late Paint _barPaint;
@@ -57,6 +60,7 @@ class LineChartPainter extends AxisChartPainter<LineChartData> {
   late Paint _bgTouchTooltipPaint;
   late Paint _borderTouchTooltipPaint;
   late Paint _clipPaint;
+  late Paint _maskPaint;
 
   /// Paints [LineChartData] into the provided canvas.
   @override
@@ -191,6 +195,9 @@ class LineChartPainter extends AxisChartPainter<LineChartData> {
         holder,
       );
     }
+
+    // Draw masks for selected points
+    drawMasks(context, canvasWrapper, holder);
   }
 
   @visibleForTesting
@@ -226,6 +233,123 @@ class LineChartPainter extends AxisChartPainter<LineChartData> {
     }
 
     canvasWrapper.clipRect(Rect.fromLTRB(left, top, right, bottom));
+  }
+
+  /// Draws masks for selected points in the line chart
+  @visibleForTesting
+  void drawMasks(
+    BuildContext context,
+    CanvasWrapper canvasWrapper,
+    PaintHolder<LineChartData> holder,
+  ) {
+    final maskData = holder.data.maskData;
+    if (maskData == null || !maskData.show) {
+      return;
+    }
+
+    final data = holder.data;
+    final maskDrawingInfo = <_LineMaskDrawingInfo>[];
+
+    // Collect all selected points from all lines
+    for (var i = 0; i < data.lineBarsData.length; i++) {
+      final barData = data.lineBarsData[i];
+      if (!barData.show) {
+        continue;
+      }
+
+      for (final spotIndex in barData.showingIndicators) {
+        if (spotIndex < 0 || spotIndex >= barData.spots.length) {
+          continue;
+        }
+        final spot = barData.spots[spotIndex];
+        if (spot.isNull()) {
+          continue;
+        }
+        maskDrawingInfo.add(
+          _LineMaskDrawingInfo(barData, i, spot, spotIndex),
+        );
+      }
+    }
+
+    // Draw masks for each selected point
+    for (final maskInfo in maskDrawingInfo) {
+      drawMask(
+        context,
+        canvasWrapper,
+        maskData,
+        maskInfo,
+        holder,
+      );
+    }
+  }
+
+  @visibleForTesting
+  void drawMask(
+    BuildContext context,
+    CanvasWrapper canvasWrapper,
+    LineMaskData maskData,
+    _LineMaskDrawingInfo maskInfo,
+    PaintHolder<LineChartData> holder,
+  ) {
+    final viewSize = canvasWrapper.size;
+    final x = getPixelX(maskInfo.spot.x, viewSize, holder);
+    final y = getPixelY(maskInfo.spot.y, viewSize, holder);
+
+    // Validate coordinates to prevent drawing outside bounds
+    if (x.isNaN ||
+        x < 0 ||
+        x > viewSize.width ||
+        y.isNaN ||
+        y < 0 ||
+        y > viewSize.height) {
+      return;
+    }
+
+    // Set paint properties once to avoid repeated setup
+    _maskPaint
+      ..color = maskData.color
+      ..style = PaintingStyle.fill;
+
+    Rect maskRect;
+    switch (maskData.maskPosition) {
+      case LineMaskPosition.right:
+        maskRect = Rect.fromLTWH(
+          x,
+          0,
+          viewSize.width - x, // Extend to the full width of the chart
+          viewSize.height,
+        );
+      case LineMaskPosition.left:
+        maskRect = Rect.fromLTWH(
+          0,
+          0,
+          x, // Extend from the left edge to the point
+          viewSize.height,
+        );
+      case LineMaskPosition.bottom:
+        maskRect = Rect.fromLTWH(
+          0,
+          y,
+          viewSize.width,
+          viewSize.height - y, // Extend to the bottom of the chart
+        );
+      case LineMaskPosition.top:
+        maskRect = Rect.fromLTWH(
+          0,
+          0,
+          viewSize.width,
+          y, // Extend from the top edge to the point
+        );
+    }
+
+    // Ensure mask stays within chart bounds and has valid dimensions
+    final chartRect = Rect.fromLTWH(0, 0, viewSize.width, viewSize.height);
+    maskRect = maskRect.intersect(chartRect);
+
+    // Only draw if the mask has valid dimensions
+    if (maskRect.width > 0 && maskRect.height > 0) {
+      canvasWrapper.drawRect(maskRect, _maskPaint);
+    }
   }
 
   @visibleForTesting
@@ -1470,4 +1594,19 @@ class LineIndexDrawingInfo {
   final FlSpot spot;
   final int spotIndex;
   final TouchedSpotIndicatorData indicatorData;
+}
+
+/// Helper class for drawing masks in line chart
+class _LineMaskDrawingInfo {
+  const _LineMaskDrawingInfo(
+    this.line,
+    this.lineIndex,
+    this.spot,
+    this.spotIndex,
+  );
+
+  final LineChartBarData line;
+  final int lineIndex;
+  final FlSpot spot;
+  final int spotIndex;
 }

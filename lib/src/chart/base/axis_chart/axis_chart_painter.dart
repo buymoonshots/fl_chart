@@ -426,28 +426,80 @@ abstract class AxisChartPainter<D extends AxisChartData>
             textDirection: TextDirection.ltr,
           )..layout();
 
+          // Calculate base label rect
+          Rect labelRect;
+
+          if (line.showOnTopOfTheChartBoxArea) {
+            // When showing on top, position labels outside the chart bounds
+            // Use alignment to determine if label goes above (topCenter) or below (bottomCenter)
+            final isTop = label.alignment.y <
+                0; // topCenter, topLeft, topRight have y = -1
+
+            if (isTop) {
+              // Position above the chart
+              labelRect = Rect.fromLTRB(
+                from.dx - padding.right - tp.width,
+                0 - padding.bottom - tp.height,
+                to.dx + padding.left,
+                0 + padding.top,
+              );
+            } else {
+              // Position below the chart
+              labelRect = Rect.fromLTRB(
+                from.dx - padding.right - tp.width,
+                viewSize.height - padding.top,
+                to.dx + padding.left,
+                viewSize.height + padding.bottom + tp.height,
+              );
+            }
+          } else {
+            // Default behavior: position within chart bounds
+            labelRect = Rect.fromLTRB(
+              from.dx - padding.right - tp.width,
+              from.dy + padding.top,
+              to.dx + padding.left,
+              to.dy - padding.bottom - tp.height,
+            );
+          }
+
+          // If fitInsideHorizontally is enabled, adjust the label position
+          // to keep it within the viewport bounds horizontally
+          if (line.fitInsideHorizontally) {
+            final labelWidth = label.direction == LabelDirection.horizontal
+                ? tp.width
+                : tp.height;
+
+            // Clamp X position to keep label within horizontal bounds
+            var adjustedX = labelRect.left;
+            if (adjustedX < 0) {
+              adjustedX = 0;
+            } else if (adjustedX + labelWidth > viewSize.width) {
+              adjustedX = viewSize.width - labelWidth;
+            }
+
+            labelRect = Rect.fromLTRB(
+              adjustedX,
+              labelRect.top,
+              adjustedX + (labelRect.right - labelRect.left),
+              labelRect.bottom,
+            );
+          }
+
           switch (label.direction) {
             case LabelDirection.horizontal:
               canvasWrapper.drawText(
                 tp,
-                label.alignment.withinRect(
-                  Rect.fromLTRB(
-                    from.dx - padding.right - tp.width,
-                    from.dy + padding.top,
-                    to.dx + padding.left,
-                    to.dy - padding.bottom - tp.height,
-                  ),
-                ),
+                label.alignment.withinRect(labelRect),
               );
             case LabelDirection.vertical:
               canvasWrapper.drawVerticalText(
                 tp,
                 label.alignment.withinRect(
                   Rect.fromLTRB(
-                    from.dx - padding.right,
-                    from.dy + padding.top,
-                    to.dx + padding.left + tp.height,
-                    to.dy - padding.bottom - tp.width,
+                    labelRect.left,
+                    labelRect.top,
+                    labelRect.right + tp.height,
+                    labelRect.bottom,
                   ),
                 ),
               );

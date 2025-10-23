@@ -19,11 +19,15 @@ class CandlestickChartPainter extends AxisChartPainter<CandlestickChartData> {
       ..strokeWidth = 1.0;
 
     _clipPaint = Paint();
+    _maskPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = const Color(0x40000000);
   }
 
   late Paint _bgTouchTooltipPaint;
   late Paint _borderTouchTooltipPaint;
   late Paint _clipPaint;
+  late Paint _maskPaint;
 
   /// Paints [CandlestickChartData] into the provided canvas.
   @override
@@ -41,13 +45,23 @@ class CandlestickChartPainter extends AxisChartPainter<CandlestickChartData> {
         ..clipRect(Offset.zero & canvasWrapper.size);
     }
     super.paint(context, canvasWrapper, holder);
+
+    if (!holder.data.extraLinesData.extraLinesOnTop) {
+      super.drawExtraLines(context, canvasWrapper, holder);
+    }
+
     drawAxisSpotIndicator(context, canvasWrapper, holder);
     drawCandlesticks(context, canvasWrapper, holder);
+
+    if (holder.data.extraLinesData.extraLinesOnTop) {
+      super.drawExtraLines(context, canvasWrapper, holder);
+    }
 
     if (holder.chartVirtualRect != null) {
       canvasWrapper.restore();
     }
 
+    drawMasks(context, canvasWrapper, holder);
     drawTouchTooltips(context, canvasWrapper, holder);
   }
 
@@ -326,6 +340,122 @@ class CandlestickChartPainter extends AxisChartPainter<CandlestickChartData> {
       (y) => getPixelY(y, viewSize, holder),
       holder.data,
     );
+  }
+
+  @visibleForTesting
+  void drawMasks(
+    BuildContext context,
+    CanvasWrapper canvasWrapper,
+    PaintHolder<CandlestickChartData> holder,
+  ) {
+    final maskData = holder.data.maskData;
+    if (maskData == null || !maskData.show) {
+      return;
+    }
+
+    final targetData = holder.targetData;
+    final showingIndicators = targetData.showingTooltipIndicators;
+
+    // Early return if no indicators to avoid unnecessary processing
+    if (showingIndicators.isEmpty) {
+      return;
+    }
+
+    // Draw masks for each selected point
+    for (final index in showingIndicators) {
+      if (index < 0 || index >= targetData.candlestickSpots.length) {
+        continue;
+      }
+
+      final candlestickSpot = targetData.candlestickSpots[index];
+      drawMask(
+        context,
+        canvasWrapper,
+        maskData,
+        candlestickSpot,
+        index,
+        holder,
+      );
+    }
+  }
+
+  @visibleForTesting
+  void drawMask(
+    BuildContext context,
+    CanvasWrapper canvasWrapper,
+    CandlestickMaskData maskData,
+    CandlestickSpot spot,
+    int spotIndex,
+    PaintHolder<CandlestickChartData> holder,
+  ) {
+    final viewSize = canvasWrapper.size;
+    final x = getPixelX(spot.x, viewSize, holder);
+    final y = getPixelY(spot.high, viewSize, holder);
+
+    // Validate coordinates to prevent drawing outside bounds
+    if (x < 0 || x > viewSize.width || y < 0 || y > viewSize.height) {
+      return;
+    }
+
+    // Set paint properties once to avoid repeated setup
+    _maskPaint
+      ..color = maskData.color
+      ..style = PaintingStyle.fill;
+
+    // Calculate the candlestick body width to adjust mask positioning
+    double bodyWidth = 4.0; // Default body width
+    if (holder.targetData.candlestickPainter is DefaultCandlestickPainter) {
+      final painter =
+          holder.targetData.candlestickPainter as DefaultCandlestickPainter;
+      final style = painter.candlestickStyleProvider(spot, spotIndex);
+      bodyWidth = style.bodyWidth;
+    }
+
+    // Calculate the right edge of the candlestick body
+    final bodyRightEdge = x + (bodyWidth / 2);
+
+    Rect maskRect;
+    switch (maskData.maskPosition) {
+      case CandlestickMaskPosition.right:
+        maskRect = Rect.fromLTWH(
+          bodyRightEdge, // Start from the right edge of the body instead of center line
+          0,
+          viewSize.width -
+              bodyRightEdge, // Extend to the full width of the chart
+          viewSize.height,
+        );
+      case CandlestickMaskPosition.left:
+        final bodyLeftEdge = x - (bodyWidth / 2);
+        maskRect = Rect.fromLTWH(
+          0,
+          0,
+          bodyLeftEdge, // Extend from the left edge to the left edge of the body
+          viewSize.height,
+        );
+      case CandlestickMaskPosition.bottom:
+        maskRect = Rect.fromLTWH(
+          0,
+          y,
+          viewSize.width,
+          viewSize.height - y, // Extend to the bottom of the chart
+        );
+      case CandlestickMaskPosition.top:
+        maskRect = Rect.fromLTWH(
+          0,
+          0,
+          viewSize.width,
+          y, // Extend from the top edge to the point
+        );
+    }
+
+    // Ensure mask stays within chart bounds and has valid dimensions
+    final chartRect = Rect.fromLTWH(0, 0, viewSize.width, viewSize.height);
+    maskRect = maskRect.intersect(chartRect);
+
+    // Only draw if the mask has valid dimensions
+    if (maskRect.width > 0 && maskRect.height > 0) {
+      canvasWrapper.drawRect(maskRect, _maskPaint);
+    }
   }
 
   /// Makes a [CandlestickTouchedSpot] based on the provided [localPosition]
