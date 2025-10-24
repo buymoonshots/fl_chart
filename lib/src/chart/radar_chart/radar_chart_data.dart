@@ -409,7 +409,6 @@ class RadarTouchData extends FlTouchData<RadarTouchResponse>
     BaseTouchCallback<RadarTouchResponse>? touchCallback,
     MouseCursorResolver<RadarTouchResponse>? mouseCursorResolver,
     Duration? longPressDuration,
-    Duration? touchDelay,
     double? touchSpotThreshold,
   })  : touchSpotThreshold = touchSpotThreshold ?? 10,
         super(
@@ -417,7 +416,6 @@ class RadarTouchData extends FlTouchData<RadarTouchResponse>
           touchCallback,
           mouseCursorResolver,
           longPressDuration,
-          touchDelay,
         );
 
   /// we find the nearest spots on touched position based on this threshold
@@ -430,7 +428,6 @@ class RadarTouchData extends FlTouchData<RadarTouchResponse>
         touchCallback,
         mouseCursorResolver,
         longPressDuration,
-        touchDelay,
         touchSpotThreshold,
       ];
 }

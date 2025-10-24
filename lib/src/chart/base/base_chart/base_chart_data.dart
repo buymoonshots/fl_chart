@@ -83,7 +83,6 @@ abstract class FlTouchData<R extends BaseTouchResponse> with EquatableMixin {
     this.touchCallback,
     this.mouseCursorResolver,
     this.longPressDuration,
-    this.touchDelay,
   );
 
   /// You can disable or enable the touch system using [enabled] flag,
@@ -103,14 +102,6 @@ abstract class FlTouchData<R extends BaseTouchResponse> with EquatableMixin {
   /// default to 500 milliseconds refer to [kLongPressTimeout].
   final Duration? longPressDuration;
 
-  /// This property allows to delay the touch callback invocation.
-  /// Useful when the chart is inside a scrollable widget to avoid conflicts.
-  /// If null, touch callbacks are invoked immediately (default behavior).
-  /// If a duration is provided, the touch callback will be delayed by that duration.
-  /// If a pan gesture starts during the delay, the touch callback will be cancelled
-  /// to allow the scroll view to handle the gesture.
-  final Duration? touchDelay;
-
   /// Used for equality check, see [EquatableMixin].
   @override
   List<Object?> get props => [
@@ -118,7 +109,6 @@ abstract class FlTouchData<R extends BaseTouchResponse> with EquatableMixin {
         touchCallback,
         mouseCursorResolver,
         longPressDuration,
-        touchDelay,
       ];
 }
 

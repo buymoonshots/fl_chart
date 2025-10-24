@@ -319,13 +319,11 @@ class PieTouchData extends FlTouchData<PieTouchResponse> with EquatableMixin {
     BaseTouchCallback<PieTouchResponse>? touchCallback,
     MouseCursorResolver<PieTouchResponse>? mouseCursorResolver,
     Duration? longPressDuration,
-    Duration? touchDelay,
   }) : super(
           enabled ?? true,
           touchCallback,
           mouseCursorResolver,
           longPressDuration,
-          touchDelay,
         );
 
   /// Used for equality check, see [EquatableMixin].
@@ -335,7 +333,6 @@ class PieTouchData extends FlTouchData<PieTouchResponse> with EquatableMixin {
         touchCallback,
         mouseCursorResolver,
         longPressDuration,
-        touchDelay,
       ];
 }
 

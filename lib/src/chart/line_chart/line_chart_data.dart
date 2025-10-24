@@ -908,7 +908,6 @@ class LineTouchData extends FlTouchData<LineTouchResponse> with EquatableMixin {
     BaseTouchCallback<LineTouchResponse>? touchCallback,
     MouseCursorResolver<LineTouchResponse>? mouseCursorResolver,
     Duration? longPressDuration,
-    Duration? touchDelay,
     this.touchTooltipData = const LineTouchTooltipData(),
     this.getTouchedSpotIndicator = defaultTouchedIndicators,
     this.touchSpotThreshold = 10,
@@ -921,7 +920,6 @@ class LineTouchData extends FlTouchData<LineTouchResponse> with EquatableMixin {
           touchCallback,
           mouseCursorResolver,
           longPressDuration,
-          touchDelay,
         );
 
   /// Configs of how touch tooltip popup.
@@ -955,7 +953,6 @@ class LineTouchData extends FlTouchData<LineTouchResponse> with EquatableMixin {
     BaseTouchCallback<LineTouchResponse>? touchCallback,
     MouseCursorResolver<LineTouchResponse>? mouseCursorResolver,
     Duration? longPressDuration,
-    Duration? touchDelay,
     LineTouchTooltipData? touchTooltipData,
     GetTouchedSpotIndicator? getTouchedSpotIndicator,
     double? touchSpotThreshold,
@@ -969,7 +966,6 @@ class LineTouchData extends FlTouchData<LineTouchResponse> with EquatableMixin {
         touchCallback: touchCallback ?? this.touchCallback,
         mouseCursorResolver: mouseCursorResolver ?? this.mouseCursorResolver,
         longPressDuration: longPressDuration ?? this.longPressDuration,
-        touchDelay: touchDelay ?? this.touchDelay,
         touchTooltipData: touchTooltipData ?? this.touchTooltipData,
         getTouchedSpotIndicator:
             getTouchedSpotIndicator ?? this.getTouchedSpotIndicator,
@@ -987,7 +983,6 @@ class LineTouchData extends FlTouchData<LineTouchResponse> with EquatableMixin {
         touchCallback,
         mouseCursorResolver,
         longPressDuration,
-        touchDelay,
         touchTooltipData,
         getTouchedSpotIndicator,
         touchSpotThreshold,
