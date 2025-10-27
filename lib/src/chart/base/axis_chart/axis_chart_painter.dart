@@ -487,9 +487,28 @@ abstract class AxisChartPainter<D extends AxisChartData>
 
           switch (label.direction) {
             case LabelDirection.horizontal:
+              var position = label.alignment.withinRect(labelRect);
+
+              // Adjust position for bottom alignments to account for text height
+              if (label.alignment.y > 0) {
+                // bottomCenter, bottomLeft, bottomRight
+                position = Offset(position.dx, position.dy - tp.height);
+              }
+
+              // If fitInsideHorizontally is enabled, ensure the final drawing position
+              // keeps the text within horizontal bounds
+              if (line.fitInsideHorizontally) {
+                // Clamp the position so text doesn't extend beyond viewport
+                if (position.dx < 0) {
+                  position = Offset(0, position.dy);
+                } else if (position.dx + tp.width > viewSize.width) {
+                  position = Offset(viewSize.width - tp.width, position.dy);
+                }
+              }
+
               canvasWrapper.drawText(
                 tp,
-                label.alignment.withinRect(labelRect),
+                position,
               );
             case LabelDirection.vertical:
               canvasWrapper.drawVerticalText(
