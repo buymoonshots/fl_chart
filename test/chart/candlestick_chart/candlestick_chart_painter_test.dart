@@ -1066,5 +1066,86 @@ void main() {
         null,
       );
     });
+
+    test(
+        'vertical line labels with fitInsideHorizontally and different alignments',
+        () {
+      final candlestickChartPainter = CandlestickChartPainter();
+      final viewSize = const Size(400, 300);
+
+      // Create a vertical line at the rightmost edge with topCenter alignment
+      final topCenterLine = VerticalLine(
+        x: 390, // Near right edge
+        color: Colors.red,
+        strokeWidth: 2,
+        fitInsideHorizontally: true,
+        showOnTopOfTheChartBoxArea: true,
+        label: VerticalLineLabel(
+          show: true,
+          alignment: Alignment.topCenter,
+          style: const TextStyle(fontSize: 12),
+          labelResolver: (_) => 'Test Label',
+        ),
+      );
+
+      // Create a vertical line at the rightmost edge with bottomCenter alignment
+      final bottomCenterLine = VerticalLine(
+        x: 390, // Near right edge
+        color: Colors.blue,
+        strokeWidth: 2,
+        fitInsideHorizontally: true,
+        showOnTopOfTheChartBoxArea: true,
+        label: VerticalLineLabel(
+          show: true,
+          alignment: Alignment.bottomCenter,
+          style: const TextStyle(fontSize: 12),
+          labelResolver: (_) => 'Bottom Label',
+        ),
+      );
+
+      final data = CandlestickChartData(
+        candlestickSpots: [
+          CandlestickSpot(x: 0, open: 10, high: 15, low: 5, close: 12),
+          CandlestickSpot(x: 100, open: 12, high: 18, low: 8, close: 16),
+          CandlestickSpot(x: 200, open: 16, high: 22, low: 14, close: 20),
+          CandlestickSpot(x: 300, open: 20, high: 25, low: 18, close: 23),
+          CandlestickSpot(x: 400, open: 23, high: 28, low: 21, close: 26),
+        ],
+        extraLinesData: ExtraLinesData(
+          verticalLines: [topCenterLine, bottomCenterLine],
+        ),
+        titlesData: const FlTitlesData(show: false),
+      );
+
+      final holder = PaintHolder<CandlestickChartData>(
+        data,
+        data,
+        TextScaler.noScaling,
+      );
+
+      final mockUtils = MockUtils();
+      Utils.changeInstance(mockUtils);
+      when(mockUtils.getEfficientInterval(any, any))
+          .thenAnswer((realInvocation) => 1.0);
+      when(mockUtils.getBestInitialIntervalValue(any, any, any))
+          .thenAnswer((realInvocation) => 1.0);
+      when(mockUtils.getThemeAwareTextStyle(any, any))
+          .thenReturn(const TextStyle(color: Color(0x00ffffff)));
+      when(mockUtils.calculateRotationOffset(any, any)).thenReturn(Offset.zero);
+
+      final mockBuildContext = MockBuildContext();
+      final mockCanvas = MockCanvas();
+      final canvasWrapper = CanvasWrapper(mockCanvas, viewSize);
+
+      // This should not throw any exceptions and labels should be positioned correctly
+      expect(
+        () => candlestickChartPainter.paint(
+          mockBuildContext,
+          canvasWrapper,
+          holder,
+        ),
+        returnsNormally,
+      );
+    });
   });
 }
