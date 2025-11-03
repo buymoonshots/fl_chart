@@ -58,13 +58,16 @@ class _CandlestickChartState extends AnimatedWidgetBaseState<CandlestickChart> {
   Widget build(BuildContext context) {
     final showingData = _getData();
 
+    final animatedData = _withTouchedIndicators(
+      _candlestickChartDataTween!.evaluate(animation),
+    );
+    
     return AxisChartScaffoldWidget(
       data: showingData,
+      animatedData: animatedData,
       transformationConfig: widget.transformationConfig,
       chartBuilder: (context, chartVirtualRect) => CandlestickChartLeaf(
-        data: _withTouchedIndicators(
-          _candlestickChartDataTween!.evaluate(animation),
-        ),
+        data: animatedData,
         targetData: _withTouchedIndicators(showingData),
         key: widget.chartRendererKey,
         chartVirtualRect: chartVirtualRect,

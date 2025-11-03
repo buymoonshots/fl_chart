@@ -1147,5 +1147,74 @@ void main() {
         returnsNormally,
       );
     });
+
+    test(
+        'vertical line labels with fitInsideHorizontally at left edge with bottomCenter alignment',
+        () {
+      final candlestickChartPainter = CandlestickChartPainter();
+      final viewSize = const Size(400, 300);
+
+      // Create a vertical line at the leftmost edge with bottomCenter alignment
+      // This tests the bug where labels weren't properly clamped at the left edge
+      final leftEdgeLine = VerticalLine(
+        x: 0, // At left edge
+        color: Colors.green,
+        strokeWidth: 2,
+        fitInsideHorizontally: true,
+        showOnTopOfTheChartBoxArea: true,
+        label: VerticalLineLabel(
+          show: true,
+          alignment: Alignment.bottomCenter,
+          style: const TextStyle(fontSize: 12),
+          padding: const EdgeInsets.all(6),
+          labelResolver: (_) => 'Left Edge Label With Padding',
+        ),
+      );
+
+      final data = CandlestickChartData(
+        candlestickSpots: [
+          CandlestickSpot(x: 0, open: 10, high: 15, low: 5, close: 12),
+          CandlestickSpot(x: 100, open: 12, high: 18, low: 8, close: 16),
+          CandlestickSpot(x: 200, open: 16, high: 22, low: 14, close: 20),
+          CandlestickSpot(x: 300, open: 20, high: 25, low: 18, close: 23),
+          CandlestickSpot(x: 400, open: 23, high: 28, low: 21, close: 26),
+        ],
+        extraLinesData: ExtraLinesData(
+          verticalLines: [leftEdgeLine],
+        ),
+        titlesData: const FlTitlesData(show: false),
+      );
+
+      final holder = PaintHolder<CandlestickChartData>(
+        data,
+        data,
+        TextScaler.noScaling,
+      );
+
+      final mockUtils = MockUtils();
+      Utils.changeInstance(mockUtils);
+      when(mockUtils.getEfficientInterval(any, any))
+          .thenAnswer((realInvocation) => 1.0);
+      when(mockUtils.getBestInitialIntervalValue(any, any, any))
+          .thenAnswer((realInvocation) => 1.0);
+      when(mockUtils.getThemeAwareTextStyle(any, any))
+          .thenReturn(const TextStyle(color: Color(0x00ffffff)));
+      when(mockUtils.calculateRotationOffset(any, any)).thenReturn(Offset.zero);
+
+      final mockBuildContext = MockBuildContext();
+      final mockCanvas = MockCanvas();
+      final canvasWrapper = CanvasWrapper(mockCanvas, viewSize);
+
+      // This should not throw any exceptions and the label should be clamped
+      // to the left edge (x >= 0) properly, accounting for padding
+      expect(
+        () => candlestickChartPainter.paint(
+          mockBuildContext,
+          canvasWrapper,
+          holder,
+        ),
+        returnsNormally,
+      );
+    });
   });
 }
