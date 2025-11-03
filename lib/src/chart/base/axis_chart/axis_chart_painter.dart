@@ -252,100 +252,108 @@ abstract class AxisChartPainter<D extends AxisChartData>
     PaintHolder<D> holder,
     Size viewSize,
   ) {
+    // Lines extend to the full width of the chart content area
+    // Line segments in the widget overlay will extend from here to the widgets
     for (final line in holder.data.extraLinesData.horizontalLines) {
-      final from = Offset(0, getPixelY(line.y, viewSize, holder));
-      final to = Offset(viewSize.width, getPixelY(line.y, viewSize, holder));
+      // Check if line Y is within Y-axis bounds
+      final lineWithinYBounds = line.y >= holder.data.minY &&
+          line.y <= holder.data.maxY;
 
-      final isLineOutsideOfChart = from.dy < 0 ||
-          to.dy < 0 ||
-          from.dy > viewSize.height ||
-          to.dy > viewSize.height;
+      // Only draw lines that are within bounds (including lines with widgets)
+      // Widgets will also be hidden if their line is out of bounds
+      if (!lineWithinYBounds) {
+        continue;
+      }
 
-      if (!isLineOutsideOfChart) {
-        _extraLinesPaint
-          ..setColorOrGradientForLine(
-            line.color,
-            line.gradient,
-            from: from,
-            to: to,
-          )
-          ..strokeWidth = line.strokeWidth
-          ..transparentIfWidthIsZero()
-          ..strokeCap = line.strokeCap;
+      final pixelY = getPixelY(line.y, viewSize, holder);
+      final from = Offset(0, pixelY);
+      // Lines extend to full width of chart content area
+      // Widget overlay will extend them further to reach widgets
+      final to = Offset(viewSize.width, pixelY);
 
-        canvasWrapper.drawDashedLine(
-          from,
-          to,
-          _extraLinesPaint,
-          line.dashArray,
+      _extraLinesPaint
+        ..setColorOrGradientForLine(
+          line.color,
+          line.gradient,
+          from: from,
+          to: to,
+        )
+        ..strokeWidth = line.strokeWidth
+        ..transparentIfWidthIsZero()
+        ..strokeCap = line.strokeCap;
+
+      canvasWrapper.drawDashedLine(
+        from,
+        to,
+        _extraLinesPaint,
+        line.dashArray,
+      );
+
+      if (line.sizedPicture != null) {
+        final centerX = line.sizedPicture!.width / 2;
+        final centerY = line.sizedPicture!.height / 2;
+        final xPosition = centerX;
+        final yPosition = to.dy - centerY;
+
+        canvasWrapper
+          ..save()
+          ..translate(xPosition, yPosition)
+          ..drawPicture(line.sizedPicture!.picture)
+          ..restore();
+      }
+
+      if (line.image != null) {
+        final centerX = line.image!.width / 2;
+        final centerY = line.image!.height / 2;
+        final centeredImageOffset = Offset(centerX, to.dy - centerY);
+        canvasWrapper.drawImage(
+          line.image!,
+          centeredImageOffset,
+          _imagePaint,
+        );
+      }
+
+      if (line.label.show) {
+        final label = line.label;
+        final style =
+            TextStyle(fontSize: 11, color: line.color).merge(label.style);
+        final padding = label.padding as EdgeInsets;
+
+        final span = TextSpan(
+          text: label.labelResolver(line),
+          style: Utils().getThemeAwareTextStyle(context, style),
         );
 
-        if (line.sizedPicture != null) {
-          final centerX = line.sizedPicture!.width / 2;
-          final centerY = line.sizedPicture!.height / 2;
-          final xPosition = centerX;
-          final yPosition = to.dy - centerY;
+        final tp = TextPainter(
+          text: span,
+          textDirection: TextDirection.ltr,
+        )..layout();
 
-          canvasWrapper
-            ..save()
-            ..translate(xPosition, yPosition)
-            ..drawPicture(line.sizedPicture!.picture)
-            ..restore();
-        }
-
-        if (line.image != null) {
-          final centerX = line.image!.width / 2;
-          final centerY = line.image!.height / 2;
-          final centeredImageOffset = Offset(centerX, to.dy - centerY);
-          canvasWrapper.drawImage(
-            line.image!,
-            centeredImageOffset,
-            _imagePaint,
-          );
-        }
-
-        if (line.label.show) {
-          final label = line.label;
-          final style =
-              TextStyle(fontSize: 11, color: line.color).merge(label.style);
-          final padding = label.padding as EdgeInsets;
-
-          final span = TextSpan(
-            text: label.labelResolver(line),
-            style: Utils().getThemeAwareTextStyle(context, style),
-          );
-
-          final tp = TextPainter(
-            text: span,
-            textDirection: TextDirection.ltr,
-          )..layout();
-
-          switch (label.direction) {
-            case LabelDirection.horizontal:
-              canvasWrapper.drawText(
-                tp,
-                label.alignment.withinRect(
-                  Rect.fromLTRB(
-                    from.dx + padding.left,
-                    from.dy - padding.bottom - tp.height,
-                    to.dx - padding.right - tp.width,
-                    to.dy + padding.top,
-                  ),
+        switch (label.direction) {
+          case LabelDirection.horizontal:
+            canvasWrapper.drawText(
+              tp,
+              label.alignment.withinRect(
+                Rect.fromLTRB(
+                  from.dx + padding.left,
+                  from.dy - padding.bottom - tp.height,
+                  to.dx - padding.right - tp.width,
+                  to.dy + padding.top,
                 ),
-              );
-            case LabelDirection.vertical:
-              canvasWrapper.drawVerticalText(
-                tp,
-                label.alignment.withinRect(
-                  Rect.fromLTRB(
-                    from.dx + padding.left + tp.height,
-                    from.dy - padding.bottom - tp.width,
-                    to.dx - padding.right,
-                    to.dy + padding.top,
-                  ),
+              ),
+            );
+          case LabelDirection.vertical:
+            canvasWrapper.drawVerticalText(
+              tp,
+              label.alignment.withinRect(
+                Rect.fromLTRB(
+                  from.dx + padding.left + tp.height,
+                  from.dy - padding.bottom - tp.width,
+                  to.dx - padding.right,
+                  to.dy + padding.top,
                 ),
-              );
-          }
+              ),
+            );
         }
       }
     }
@@ -429,6 +437,14 @@ abstract class AxisChartPainter<D extends AxisChartData>
           // Calculate base label rect
           Rect labelRect;
 
+          // For center alignments, calculate labelRect centered on the line position
+          final isCenterAlignment = label.alignment == Alignment.bottomCenter ||
+              label.alignment == Alignment.topCenter ||
+              label.alignment == Alignment.center;
+          
+          final labelRectWidth = tp.width + padding.horizontal;
+          final labelRectCenter = from.dx; // Center on the line position
+
           if (line.showOnTopOfTheChartBoxArea) {
             // When showing on top, position labels outside the chart bounds
             // Use alignment to determine if label goes above (topCenter) or below (bottomCenter)
@@ -437,50 +453,105 @@ abstract class AxisChartPainter<D extends AxisChartData>
 
             if (isTop) {
               // Position above the chart
-              labelRect = Rect.fromLTRB(
-                from.dx - padding.right - tp.width,
-                0 - padding.bottom - tp.height,
-                to.dx + padding.left,
-                0 + padding.top,
-              );
+              if (isCenterAlignment) {
+                // Center the label on the line
+                labelRect = Rect.fromLTRB(
+                  labelRectCenter - labelRectWidth / 2,
+                  0 - padding.bottom - tp.height,
+                  labelRectCenter + labelRectWidth / 2,
+                  0 + padding.top,
+                );
+              } else {
+                // Use original calculation for non-center alignments
+                labelRect = Rect.fromLTRB(
+                  from.dx - padding.right - tp.width,
+                  0 - padding.bottom - tp.height,
+                  to.dx + padding.left,
+                  0 + padding.top,
+                );
+              }
             } else {
               // Position below the chart
-              labelRect = Rect.fromLTRB(
-                from.dx - padding.right - tp.width,
-                viewSize.height - padding.top,
-                to.dx + padding.left,
-                viewSize.height + padding.bottom + tp.height,
-              );
+              if (isCenterAlignment) {
+                // Center the label on the line
+                labelRect = Rect.fromLTRB(
+                  labelRectCenter - labelRectWidth / 2,
+                  viewSize.height - padding.top,
+                  labelRectCenter + labelRectWidth / 2,
+                  viewSize.height + padding.bottom + tp.height,
+                );
+              } else {
+                // Use original calculation for non-center alignments
+                labelRect = Rect.fromLTRB(
+                  from.dx - padding.right - tp.width,
+                  viewSize.height - padding.top,
+                  to.dx + padding.left,
+                  viewSize.height + padding.bottom + tp.height,
+                );
+              }
             }
           } else {
             // Default behavior: position within chart bounds
-            labelRect = Rect.fromLTRB(
-              from.dx - padding.right - tp.width,
-              from.dy + padding.top,
-              to.dx + padding.left,
-              to.dy - padding.bottom - tp.height,
-            );
+            if (isCenterAlignment) {
+              // Center the label on the line
+              labelRect = Rect.fromLTRB(
+                labelRectCenter - labelRectWidth / 2,
+                from.dy + padding.top,
+                labelRectCenter + labelRectWidth / 2,
+                from.dy - padding.bottom - tp.height,
+              );
+            } else {
+              // Use original calculation for non-center alignments
+              labelRect = Rect.fromLTRB(
+                from.dx - padding.right - tp.width,
+                from.dy + padding.top,
+                to.dx + padding.left,
+                to.dy - padding.bottom - tp.height,
+              );
+            }
           }
 
           // If fitInsideHorizontally is enabled, adjust the label position
           // to keep it within the viewport bounds horizontally
+          // When false, labelRect is used as-is and may overflow bounds
           if (line.fitInsideHorizontally) {
-            final labelWidth = label.direction == LabelDirection.horizontal
-                ? tp.width
-                : tp.height;
+            final actualLabelRectWidth = labelRect.right - labelRect.left;
+
+            // Calculate the center of the original labelRect (which should be at from.dx for center alignments)
+            final originalCenter = (labelRect.left + labelRect.right) / 2;
 
             // Clamp X position to keep label within horizontal bounds
+            // For center alignments, try to center on the line, but if it can't fit, align to the edge
             var adjustedX = labelRect.left;
-            if (adjustedX < 0) {
-              adjustedX = 0;
-            } else if (adjustedX + labelWidth > viewSize.width) {
-              adjustedX = viewSize.width - labelWidth;
+            
+            if (isCenterAlignment) {
+              // For center alignments, check if we can fit centered on the line
+              final centeredLeft = originalCenter - (actualLabelRectWidth / 2);
+              final centeredRight = originalCenter + (actualLabelRectWidth / 2);
+              
+              if (centeredLeft < 0) {
+                // Can't fit centered - overflow left, so align to left edge
+                adjustedX = 0;
+              } else if (centeredRight > viewSize.width) {
+                // Can't fit centered - overflow right, so align to right edge
+                adjustedX = viewSize.width - actualLabelRectWidth;
+              } else {
+                // Can fit centered, keep the original centered position
+                adjustedX = centeredLeft;
+              }
+            } else {
+              // For non-center alignments, use simple clamping
+              if (labelRect.left < 0) {
+                adjustedX = 0;
+              } else if (adjustedX + actualLabelRectWidth > viewSize.width) {
+                adjustedX = viewSize.width - actualLabelRectWidth;
+              }
             }
 
             labelRect = Rect.fromLTRB(
               adjustedX,
               labelRect.top,
-              adjustedX + (labelRect.right - labelRect.left),
+              adjustedX + actualLabelRectWidth,
               labelRect.bottom,
             );
           }
@@ -495,14 +566,42 @@ abstract class AxisChartPainter<D extends AxisChartData>
                 position = Offset(position.dx, position.dy - tp.height);
               }
 
-              // If fitInsideHorizontally is enabled, ensure the final drawing position
-              // keeps the text within horizontal bounds
-              if (line.fitInsideHorizontally) {
-                // Clamp the position so text doesn't extend beyond viewport
-                if (position.dx < 0) {
-                  position = Offset(0, position.dy);
-                } else if (position.dx + tp.width > viewSize.width) {
-                  position = Offset(viewSize.width - tp.width, position.dy);
+              // For center alignments, withinRect returns the center point, but TextPainter
+              // draws from that point (extending right). We need to offset by -tp.width/2 to center.
+              // However, we adjust this based on fitInsideHorizontally to keep text in bounds.
+              if (isCenterAlignment) {
+                // Use the original line position (from.dx) as the center point, not the adjusted labelRect center
+                final lineCenterX = from.dx;
+                final textLeft = lineCenterX - tp.width / 2;
+                final textRight = lineCenterX + tp.width / 2;
+
+                if (line.fitInsideHorizontally) {
+                  // For center alignments with fitInsideHorizontally:
+                  // - Try to keep text centered on the line
+                  // - If centered would overflow, shift just enough to fit while staying as close to edge as possible
+                  if (textLeft < 0) {
+                    // Overflow left: position text so left edge is at 0 (as far left as possible while fitting)
+                    position = Offset(0, position.dy);
+                  } else if (textRight > viewSize.width) {
+                    // Overflow right: position text so right edge is at width (as far right as possible while fitting)
+                    position = Offset(viewSize.width - tp.width, position.dy);
+                  } else {
+                    // Can fit centered, use centered position (offset by -tp.width/2 from line center)
+                    position = Offset(lineCenterX - tp.width / 2, position.dy);
+                  }
+                } else {
+                  // Without fitInsideHorizontally, just center normally on the line
+                  position = Offset(lineCenterX - tp.width / 2, position.dy);
+                }
+              } else {
+                // For non-center alignments, if fitInsideHorizontally is enabled,
+                // clamp the position so text doesn't extend beyond viewport
+                if (line.fitInsideHorizontally) {
+                  if (position.dx < 0) {
+                    position = Offset(0, position.dy);
+                  } else if (position.dx + tp.width > viewSize.width) {
+                    position = Offset(viewSize.width - tp.width, position.dy);
+                  }
                 }
               }
 
@@ -538,7 +637,21 @@ abstract class AxisChartPainter<D extends AxisChartData>
   ) {
     final usableSize = holder.getChartUsableSize(viewSize);
 
-    final pixelXUnadjusted = _getPixelX(spotX, holder.data, usableSize);
+    // Account for internal padding between chart content and right widgets
+    // This reduces the usable width for X positioning so last data point doesn't touch widgets
+    final hasRightWidgets = holder.data.extraLinesData.horizontalLines
+        .any((line) => line.rightWidget != null);
+    final internalPadding = hasRightWidgets
+        ? holder.data.extraLinesData.rightWidgetInternalPadding
+        : 0.0;
+    
+    // Create adjusted usable size for X calculations (reduce width by internal padding)
+    final adjustedUsableSize = Size(
+      usableSize.width - internalPadding,
+      usableSize.height,
+    );
+
+    final pixelXUnadjusted = _getPixelX(spotX, holder.data, adjustedUsableSize);
 
     // Adjust the position relative to the canvas if chartVirtualRect
     // is provided

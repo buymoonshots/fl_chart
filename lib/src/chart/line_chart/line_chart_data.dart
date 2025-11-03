@@ -267,6 +267,8 @@ class LineChartBarData with EquatableMixin {
     this.shadow = const Shadow(color: Colors.transparent),
     this.isStepLineChart = false,
     this.lineChartStepData = const LineChartStepData(),
+    this.trailingWidget,
+    this.trailingWidgetPadding = EdgeInsets.zero,
   })  : color =
             color ?? ((color == null && gradient == null) ? Colors.cyan : null),
         belowBarData = belowBarData ?? BarAreaData(),
@@ -398,6 +400,15 @@ class LineChartBarData with EquatableMixin {
   /// Holds data for representing a Step Line Chart, and works only if [isStepChart] is true.
   final LineChartStepData lineChartStepData;
 
+  /// Widget displayed at the last visible point of the line.
+  /// This widget automatically follows the line as it moves and animates.
+  /// Useful for displaying live indicators, pulse icons, or other status widgets.
+  final Widget? trailingWidget;
+
+  /// Padding offset for positioning the trailing widget relative to the last point.
+  /// Default is EdgeInsets.zero (widget centered on the point).
+  final EdgeInsets trailingWidgetPadding;
+
   /// Lerps a [LineChartBarData] based on [t] value, check [Tween.lerp].
   static LineChartBarData lerp(
     LineChartBarData a,
@@ -435,6 +446,12 @@ class LineChartBarData with EquatableMixin {
         isStepLineChart: b.isStepLineChart,
         lineChartStepData:
             LineChartStepData.lerp(a.lineChartStepData, b.lineChartStepData, t),
+        trailingWidget: b.trailingWidget,
+        trailingWidgetPadding: EdgeInsets.lerp(
+          a.trailingWidgetPadding,
+          b.trailingWidgetPadding,
+          t,
+        )!,
       );
 
   /// Copies current [LineChartBarData] to a new [LineChartBarData],
@@ -462,6 +479,8 @@ class LineChartBarData with EquatableMixin {
     Shadow? shadow,
     bool? isStepLineChart,
     LineChartStepData? lineChartStepData,
+    Widget? trailingWidget,
+    EdgeInsets? trailingWidgetPadding,
   }) =>
       LineChartBarData(
         spots: spots ?? this.spots,
@@ -487,6 +506,9 @@ class LineChartBarData with EquatableMixin {
         shadow: shadow ?? this.shadow,
         isStepLineChart: isStepLineChart ?? this.isStepLineChart,
         lineChartStepData: lineChartStepData ?? this.lineChartStepData,
+        trailingWidget: trailingWidget ?? this.trailingWidget,
+        trailingWidgetPadding:
+            trailingWidgetPadding ?? this.trailingWidgetPadding,
       );
 
   /// Used for equality check, see [EquatableMixin].
@@ -513,6 +535,8 @@ class LineChartBarData with EquatableMixin {
         shadow,
         isStepLineChart,
         lineChartStepData,
+        trailingWidget,
+        trailingWidgetPadding,
       ];
 }
 

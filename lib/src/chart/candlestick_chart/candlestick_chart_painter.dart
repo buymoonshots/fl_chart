@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:fl_chart/src/chart/base/axis_chart/axis_chart_painter.dart';
 import 'package:fl_chart/src/chart/base/base_chart/base_chart_painter.dart';
@@ -46,14 +48,33 @@ class CandlestickChartPainter extends AxisChartPainter<CandlestickChartData> {
     }
     super.paint(context, canvasWrapper, holder);
 
-    if (!holder.data.extraLinesData.extraLinesOnTop) {
-      super.drawExtraLines(context, canvasWrapper, holder);
-    }
-
     drawAxisSpotIndicator(context, canvasWrapper, holder);
-    drawCandlesticks(context, canvasWrapper, holder);
-
-    if (holder.data.extraLinesData.extraLinesOnTop) {
+    
+    // Determine which candlesticks have lines centered on them for z-ordering
+    final candlesticksWithLinesOnTop = _getCandlesticksWithLinesOnTop(holder);
+    
+    // Draw candlesticks in two passes for z-ordering
+    if (!holder.data.extraLinesData.extraLinesOnTop) {
+      // Draw candlesticks without lines first
+      drawCandlesticks(
+        context,
+        canvasWrapper,
+        holder,
+        skipIndices: candlesticksWithLinesOnTop,
+      );
+      // Draw lines
+      super.drawExtraLines(context, canvasWrapper, holder);
+      // Draw candlesticks with lines on top
+      drawCandlesticks(
+        context,
+        canvasWrapper,
+        holder,
+        onlyIndices: candlesticksWithLinesOnTop,
+      );
+    } else {
+      // Draw all candlesticks first
+      drawCandlesticks(context, canvasWrapper, holder);
+      // Draw lines on top
       super.drawExtraLines(context, canvasWrapper, holder);
     }
 
@@ -65,12 +86,59 @@ class CandlestickChartPainter extends AxisChartPainter<CandlestickChartData> {
     drawTouchTooltips(context, canvasWrapper, holder);
   }
 
+  /// Identifies which candlesticks have horizontal lines centered on them
+  /// Uses a tolerance based on Y-axis range to determine "centered on"
+  Set<int> _getCandlesticksWithLinesOnTop(
+    PaintHolder<CandlestickChartData> holder,
+  ) {
+    final data = holder.data;
+    final horizontalLines = data.extraLinesData.horizontalLines;
+    if (horizontalLines.isEmpty) {
+      return <int>{};
+    }
+
+    final candlesticksWithLines = <int>{};
+    final yRange = data.maxY - data.minY;
+    // Use 0.5% of Y-axis range as tolerance, or minimum 1 pixel worth of value
+    final tolerance = max(yRange * 0.005, (yRange / 1000));
+
+    for (final line in horizontalLines) {
+      final lineY = line.y;
+      
+      for (var i = 0; i < data.candlestickSpots.length; i++) {
+        final spot = data.candlestickSpots[i];
+        if (!spot.show) continue;
+
+        // Check if line is centered on any of the candlestick's key values
+        // (open, close, high, low, or midpoint)
+        final valuesToCheck = [
+          spot.open,
+          spot.close,
+          spot.high,
+          spot.low,
+          spot.midPoint,
+        ];
+
+        for (final value in valuesToCheck) {
+          if ((lineY - value).abs() <= tolerance) {
+            candlesticksWithLines.add(i);
+            break; // Found a match for this candlestick, no need to check other values
+          }
+        }
+      }
+    }
+
+    return candlesticksWithLines;
+  }
+
   @visibleForTesting
   void drawCandlesticks(
     BuildContext context,
     CanvasWrapper canvasWrapper,
-    PaintHolder<CandlestickChartData> holder,
-  ) {
+    PaintHolder<CandlestickChartData> holder, {
+    Set<int>? skipIndices,
+    Set<int>? onlyIndices,
+  }) {
     final data = holder.data;
     final viewSize = canvasWrapper.size;
     final clip = data.clipData;
@@ -112,13 +180,87 @@ class CandlestickChartPainter extends AxisChartPainter<CandlestickChartData> {
       canvasWrapper.clipRect(Rect.fromLTRB(left, top, right, bottom));
     }
 
+    // Calculate dynamic candle width if sizing is configured
+    double? calculatedBodyWidth;
+    if (data.candlestickSizing != null && data.candlestickSpots.isNotEmpty) {
+      final sizing = data.candlestickSizing!;
+      final usableSize = holder.getChartUsableSize(viewSize);
+      
+      // Account for internal padding between chart content and right widgets
+      final hasRightWidgets = data.extraLinesData.horizontalLines
+          .any((line) => line.rightWidget != null);
+      final internalPadding = hasRightWidgets
+          ? data.extraLinesData.rightWidgetInternalPadding
+          : 0.0;
+      
+      final availableWidth = usableSize.width - internalPadding;
+      final numberOfVisibleCandles = data.candlestickSpots
+          .where((spot) => spot.show)
+          .length;
+      
+      if (numberOfVisibleCandles > 0) {
+        double width;
+        if (sizing.minPadding != null) {
+          // Calculate width based on minimum padding
+          final totalPadding = sizing.minPadding! * (numberOfVisibleCandles - 1);
+          width = (availableWidth - totalPadding) / numberOfVisibleCandles;
+        } else {
+          // Calculate width based on available space
+          width = availableWidth / numberOfVisibleCandles;
+        }
+        
+        // Apply min/max constraints if provided
+        if (sizing.minWidth != null && width < sizing.minWidth!) {
+          width = sizing.minWidth!;
+        }
+        if (sizing.maxWidth != null && width > sizing.maxWidth!) {
+          width = sizing.maxWidth!;
+        }
+        
+        calculatedBodyWidth = width;
+      }
+    }
+
+    // Store original painter and create wrapper if dynamic sizing is active
+    final originalPainter = holder.data.candlestickPainter;
+    final painterToUse = calculatedBodyWidth != null &&
+            originalPainter is DefaultCandlestickPainter
+        ? _DynamicWidthCandlestickPainter(
+            originalPainter,
+            calculatedBodyWidth,
+          )
+        : originalPainter;
+
     for (var i = 0; i < data.candlestickSpots.length; i++) {
       final candlestickSpot = data.candlestickSpots[i];
 
       if (!candlestickSpot.show) {
         continue;
       }
-      holder.data.candlestickPainter.paint(
+
+      // Skip if this index should be skipped
+      if (skipIndices != null && skipIndices.contains(i)) {
+        continue;
+      }
+
+      // Skip if only specific indices should be drawn and this isn't one of them
+      if (onlyIndices != null && !onlyIndices.contains(i)) {
+        continue;
+      }
+
+      // Skip rendering if candlestick is completely outside Y-axis bounds
+      // Check if both high and low are outside the visible range
+      final highOutsideBounds = candlestickSpot.high < data.minY ||
+          candlestickSpot.high > data.maxY;
+      final lowOutsideBounds =
+          candlestickSpot.low < data.minY || candlestickSpot.low > data.maxY;
+
+      // Only skip if both high and low are outside bounds (candlestick completely invisible)
+      if (highOutsideBounds && lowOutsideBounds) {
+        continue;
+      }
+
+      painterToUse.paint(
         canvasWrapper.canvas,
         (x) => getPixelX(x, viewSize, holder),
         (y) => getPixelY(y, viewSize, holder),
@@ -403,12 +545,57 @@ class CandlestickChartPainter extends AxisChartPainter<CandlestickChartData> {
       ..style = PaintingStyle.fill;
 
     // Calculate the candlestick body width to adjust mask positioning
-    double bodyWidth = 4.0; // Default body width
+    var bodyWidth = 4.0; // Default body width
     if (holder.targetData.candlestickPainter is DefaultCandlestickPainter) {
       final painter =
           holder.targetData.candlestickPainter as DefaultCandlestickPainter;
       final style = painter.candlestickStyleProvider(spot, spotIndex);
-      bodyWidth = style.bodyWidth;
+      
+      if (style.bodyWidth != null) {
+        bodyWidth = style.bodyWidth!;
+      } else {
+        // If bodyWidth is null, calculate from CandlestickSizing if configured
+        final data = holder.targetData;
+        if (data.candlestickSizing != null && data.candlestickSpots.isNotEmpty) {
+          final sizing = data.candlestickSizing!;
+          final usableSize = holder.getChartUsableSize(viewSize);
+          
+          // Account for internal padding between chart content and right widgets
+          final hasRightWidgets = data.extraLinesData.horizontalLines
+              .any((line) => line.rightWidget != null);
+          final internalPadding = hasRightWidgets
+              ? data.extraLinesData.rightWidgetInternalPadding
+              : 0.0;
+          
+          final availableWidth = usableSize.width - internalPadding;
+          final numberOfVisibleCandles = data.candlestickSpots
+              .where((spot) => spot.show)
+              .length;
+          
+          if (numberOfVisibleCandles > 0) {
+            double width;
+            if (sizing.minPadding != null) {
+              // Calculate width based on minimum padding
+              final totalPadding = sizing.minPadding! * (numberOfVisibleCandles - 1);
+              width = (availableWidth - totalPadding) / numberOfVisibleCandles;
+            } else {
+              // Calculate width based on available space
+              width = availableWidth / numberOfVisibleCandles;
+            }
+            
+            // Apply min/max constraints if provided
+            if (sizing.minWidth != null && width < sizing.minWidth!) {
+              width = sizing.minWidth!;
+            }
+            if (sizing.maxWidth != null && width > sizing.maxWidth!) {
+              width = sizing.maxWidth!;
+            }
+            
+            bodyWidth = width;
+          }
+        }
+        // If no sizing configured, bodyWidth remains 4.0 (default)
+      }
     }
 
     // Calculate the right edge of the candlestick body
@@ -508,4 +695,137 @@ class CandlestickChartPainter extends AxisChartPainter<CandlestickChartData> {
     final closestSpot = touchedSpots.first;
     return CandlestickTouchedSpot(closestSpot.spot, closestSpot.index);
   }
+}
+
+/// A wrapper painter that overrides bodyWidth for dynamic sizing
+class _DynamicWidthCandlestickPainter extends FlCandlestickPainter {
+  _DynamicWidthCandlestickPainter(
+    this._basePainter,
+    this._dynamicWidth,
+  );
+
+  final DefaultCandlestickPainter _basePainter;
+  final double _dynamicWidth;
+
+  @override
+  List<Object?> get props => [_basePainter, _dynamicWidth];
+
+  @override
+  void paint(
+    Canvas canvas,
+    ValueInCanvasProvider xInCanvasProvider,
+    ValueInCanvasProvider yInCanvasProvider,
+    CandlestickSpot spot,
+    int spotIndex,
+  ) {
+    final originalStyle = _basePainter.candlestickStyleProvider(spot, spotIndex);
+    // Calculate lineWidth from dynamic width if not provided
+    final calculatedLineWidth =
+        originalStyle.lineWidth ?? _dynamicWidth / 4;
+    final modifiedStyle = CandlestickStyle(
+      lineColor: originalStyle.lineColor,
+      lineWidth: calculatedLineWidth,
+      bodyStrokeColor: originalStyle.bodyStrokeColor,
+      bodyStrokeWidth: originalStyle.bodyStrokeWidth,
+      bodyFillColor: originalStyle.bodyFillColor,
+      bodyWidth: _dynamicWidth,
+      bodyRadius: originalStyle.bodyRadius,
+    );
+
+    final xOffsetInCanvas = xInCanvasProvider(spot.x);
+    final openYOffsetInCanvas = yInCanvasProvider(spot.open);
+    final highYOffsetInCanvas = yInCanvasProvider(spot.high);
+    final lowOYOffsetInCanvas = yInCanvasProvider(spot.low);
+    final closeYOffsetInCanvas = yInCanvasProvider(spot.close);
+
+    final bodyHighCanvas = min(openYOffsetInCanvas, closeYOffsetInCanvas);
+    final bodyLowCanvas = max(openYOffsetInCanvas, closeYOffsetInCanvas);
+
+    final linePainter = Paint();
+    final bodyPainter = Paint();
+    final bodyStrokePainter = Paint();
+
+    final effectiveLineWidth = modifiedStyle.lineWidth ?? 0;
+    if (effectiveLineWidth > 0 && modifiedStyle.lineColor.a > 0) {
+      canvas
+        // Bottom line
+        ..drawLine(
+          Offset(xOffsetInCanvas, lowOYOffsetInCanvas),
+          Offset(xOffsetInCanvas, bodyLowCanvas),
+          linePainter
+            ..color = modifiedStyle.lineColor
+            ..strokeWidth = effectiveLineWidth,
+        )
+        // Top line
+        ..drawLine(
+          Offset(xOffsetInCanvas, highYOffsetInCanvas),
+          Offset(xOffsetInCanvas, bodyHighCanvas),
+          linePainter
+            ..color = modifiedStyle.lineColor
+            ..strokeWidth = effectiveLineWidth,
+        );
+    }
+
+    // Body
+    // For flat candles (open == close), ensure minimum height for visibility
+    final effectiveBodyWidth = modifiedStyle.bodyWidth ?? _dynamicWidth;
+    final bodyHeight = bodyLowCanvas - bodyHighCanvas;
+    final minBodyHeight = bodyHeight > 0 ? 0.0 : 1.0;
+    final adjustedBodyLowCanvas = bodyLowCanvas + minBodyHeight;
+    
+    final bodyRect = Rect.fromLTRB(
+      xOffsetInCanvas - effectiveBodyWidth / 2,
+      bodyHighCanvas,
+      xOffsetInCanvas + effectiveBodyWidth / 2,
+      adjustedBodyLowCanvas,
+    );
+    if (modifiedStyle.bodyFillColor.a > 0 && effectiveBodyWidth > 0) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          bodyRect,
+          Radius.circular(modifiedStyle.bodyRadius),
+        ),
+        bodyPainter
+          ..color = modifiedStyle.bodyFillColor
+          ..style = PaintingStyle.fill,
+      );
+    }
+    if (modifiedStyle.bodyStrokeWidth > 0 &&
+        modifiedStyle.bodyStrokeColor.a > 0) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          bodyRect,
+          Radius.circular(modifiedStyle.bodyRadius),
+        ),
+        bodyStrokePainter
+          ..color = modifiedStyle.bodyStrokeColor
+          ..strokeWidth = modifiedStyle.bodyStrokeWidth
+          ..style = PaintingStyle.stroke,
+      );
+    }
+  }
+
+  @override
+  FlCandlestickPainter lerp(
+    FlCandlestickPainter a,
+    FlCandlestickPainter b,
+    double t,
+  ) =>
+      _basePainter.lerp(a, b, t);
+
+  @override
+  Color getMainColor({
+    required CandlestickSpot spot,
+    required int spotIndex,
+  }) =>
+      _basePainter.getMainColor(spot: spot, spotIndex: spotIndex);
+
+  @override
+  (bool, double) hitTest(
+    CandlestickSpot spot,
+    double touchedX,
+    double spotX,
+    double extraTouchThreshold,
+  ) =>
+      _basePainter.hitTest(spot, touchedX, spotX, extraTouchThreshold);
 }

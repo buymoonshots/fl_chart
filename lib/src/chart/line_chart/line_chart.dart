@@ -59,18 +59,21 @@ class _LineChartState extends AnimatedWidgetBaseState<LineChart> {
   Widget build(BuildContext context) {
     final showingData = _getData();
 
+    final animatedData = _withTouchedIndicators(
+      _lineChartDataTween!.evaluate(animation),
+    );
+
     return AxisChartScaffoldWidget(
+      data: showingData,
+      animatedData: animatedData,
       transformationConfig: widget.transformationConfig,
       chartBuilder: (context, chartVirtualRect) => LineChartLeaf(
-        data: _withTouchedIndicators(
-          _lineChartDataTween!.evaluate(animation),
-        ),
+        data: animatedData,
         targetData: _withTouchedIndicators(showingData),
         key: widget.chartRendererKey,
         chartVirtualRect: chartVirtualRect,
         canBeScaled: widget.transformationConfig.scaleAxis != FlScaleAxis.none,
       ),
-      data: showingData,
     );
   }
 
