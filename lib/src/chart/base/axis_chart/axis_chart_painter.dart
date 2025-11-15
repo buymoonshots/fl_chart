@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:fl_chart/src/chart/bar_chart/bar_chart_painter.dart';
 import 'package:fl_chart/src/chart/base/axis_chart/axis_chart_helper.dart';
@@ -252,24 +254,112 @@ abstract class AxisChartPainter<D extends AxisChartData>
     PaintHolder<D> holder,
     Size viewSize,
   ) {
-    // Lines extend to the full width of the chart content area
-    // Line segments in the widget overlay will extend from here to the widgets
-    for (final line in holder.data.extraLinesData.horizontalLines) {
-      // Check if line Y is within Y-axis bounds
-      final lineWithinYBounds = line.y >= holder.data.minY &&
-          line.y <= holder.data.maxY;
+    // Calculate extension distance for lines without widgets to match lines with widgets
+    // If any line has a rightWidget, all lines should extend to the same distance
+    double lineExtension = 0.0;
+    final hasAnyRightWidget = holder.data.extraLinesData.horizontalLines
+        .any((line) => line.rightWidget != null);
 
-      // Only draw lines that are within bounds (including lines with widgets)
-      // Widgets will also be hidden if their line is out of bounds
-      if (!lineWithinYBounds) {
+    if (hasAnyRightWidget) {
+      // Calculate maximum widget width estimate and padding
+      // Use the same logic as _calculateRightWidgetPadding but with estimated width
+      double maxWidgetWidth =
+          120.0; // Default estimate (same as fallback in scaffold)
+      double maxPadding = 0.0;
+
+      for (final line in holder.data.extraLinesData.horizontalLines) {
+        if (line.rightWidget != null && line.rightWidgetPadding > maxPadding) {
+          maxPadding = line.rightWidgetPadding;
+        }
+      }
+
+      // Extension distance matches where widgets would be positioned
+      lineExtension = maxWidgetWidth + maxPadding;
+    }
+
+    // Lines extend to the full width of the chart content area
+    // If there are any widgets, extend all lines to match widget distance
+    // Line segments in the widget overlay will extend from here to the widgets
+
+    // Calculate relative tolerance based on Y-axis range (0.5% like candlestick chart)
+    // This ensures duplicate detection works correctly for charts with different value ranges
+    final yRange = holder.data.maxY - holder.data.minY;
+    // Use 0.5% of Y-axis range as tolerance, or minimum 1 pixel worth of value
+    final tolerance = yRange > 0
+        ? max(yRange * 0.005, yRange / 1000)
+        : 0.0001; // Fallback for edge case where range is 0
+
+    // Track which Y values we've already drawn to avoid drawing duplicate lines
+    // When multiple lines have the same Y value, only draw the first one (by index)
+    final drawnYValues = <double>{};
+
+    for (int lineIndex = 0;
+        lineIndex < holder.data.extraLinesData.horizontalLines.length;
+        lineIndex++) {
+      final line = holder.data.extraLinesData.horizontalLines[lineIndex];
+
+      // Check if we've already drawn a line at this Y value
+      // If so, skip this line (only show the first one with the same Y)
+      // Use relative tolerance for accurate duplicate detection across different value ranges
+      final isDuplicateY = drawnYValues.any(
+          (drawnY) => drawnY == line.y || (drawnY - line.y).abs() < tolerance);
+      if (isDuplicateY) {
+        // Skip this line - we've already drawn one at this Y value
         continue;
       }
 
-      final pixelY = getPixelY(line.y, viewSize, holder);
+      // Mark this Y value as drawn
+      drawnYValues.add(line.y);
+
+      // Check if line Y is within Y-axis bounds
+      final lineWithinYBounds =
+          line.y >= holder.data.minY && line.y <= holder.data.maxY;
+
+      // For lines with clampToBounds enabled, draw at the chart edge even if outside bounds
+      double pixelY;
+      if (!lineWithinYBounds && line.clampToBounds) {
+        // Use the same usableSize calculation as getPixelY for consistency
+        final usableSize = holder.getChartUsableSize(viewSize);
+        final adjustment = holder.chartVirtualRect?.top ?? 0;
+
+        // Calculate offset to position lines beyond vertical line labels
+        // Vertical labels with showOnTopOfTheChartBoxArea are positioned outside chart bounds
+        // Top labels: y = 0 - padding.bottom - textHeight (typically -25 to -35px)
+        // Bottom labels: y = viewSize.height + padding.top + textHeight (typically +25 to +35px)
+        // We add a small offset to ensure clamped lines are clearly above/below labels
+        // but not so far that they're outside the visible container
+        const labelOffset =
+            25.0; // Offset to position beyond typical label height + padding
+
+        // Clamp to nearest edge: top (y=0) or bottom (y=usableSize.height)
+        // In chart coordinates: higher Y = higher on chart (top), lower Y = lower on chart (bottom)
+        if (line.y > holder.data.maxY) {
+          // Line is above visible area (higher value) → clamp above top edge, beyond labels
+          pixelY = 0.0 - labelOffset + adjustment;
+        } else if (line.y < holder.data.minY) {
+          // Line is below visible area (lower value) → clamp below bottom edge, beyond labels
+          pixelY = usableSize.height + labelOffset + adjustment;
+        } else {
+          // This shouldn't happen if lineWithinYBounds check is correct, but handle it anyway
+          pixelY = getPixelY(line.y, viewSize, holder);
+        }
+      } else if (!lineWithinYBounds) {
+        // Skip lines that are outside bounds and don't have clampToBounds
+        continue;
+      } else {
+        // Normal case: line is within bounds
+        pixelY = getPixelY(line.y, viewSize, holder);
+      }
+
       final from = Offset(0, pixelY);
-      // Lines extend to full width of chart content area
-      // Widget overlay will extend them further to reach widgets
-      final to = Offset(viewSize.width, pixelY);
+      // Lines with widgets extend to chart edge (viewSize.width), overlay extends them to widget
+      // Lines without widgets extend to the same distance as lines with widgets would extend
+      final lineEndX = line.rightWidget != null
+          ? viewSize
+              .width // Lines with widgets stop at chart edge, overlay extends to widget
+          : viewSize.width +
+              lineExtension; // Lines without widgets extend to match widget distance
+      final to = Offset(lineEndX, pixelY);
 
       _extraLinesPaint
         ..setColorOrGradientForLine(
@@ -441,7 +531,7 @@ abstract class AxisChartPainter<D extends AxisChartData>
           final isCenterAlignment = label.alignment == Alignment.bottomCenter ||
               label.alignment == Alignment.topCenter ||
               label.alignment == Alignment.center;
-          
+
           final labelRectWidth = tp.width + padding.horizontal;
           final labelRectCenter = from.dx; // Center on the line position
 
@@ -523,12 +613,12 @@ abstract class AxisChartPainter<D extends AxisChartData>
             // Clamp X position to keep label within horizontal bounds
             // For center alignments, try to center on the line, but if it can't fit, align to the edge
             var adjustedX = labelRect.left;
-            
+
             if (isCenterAlignment) {
               // For center alignments, check if we can fit centered on the line
               final centeredLeft = originalCenter - (actualLabelRectWidth / 2);
               final centeredRight = originalCenter + (actualLabelRectWidth / 2);
-              
+
               if (centeredLeft < 0) {
                 // Can't fit centered - overflow left, so align to left edge
                 adjustedX = 0;
@@ -644,7 +734,7 @@ abstract class AxisChartPainter<D extends AxisChartData>
     final internalPadding = hasRightWidgets
         ? holder.data.extraLinesData.rightWidgetInternalPadding
         : 0.0;
-    
+
     // Create adjusted usable size for X calculations (reduce width by internal padding)
     final adjustedUsableSize = Size(
       usableSize.width - internalPadding,

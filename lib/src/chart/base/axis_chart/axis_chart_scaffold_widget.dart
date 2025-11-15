@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:ui';
 
 import 'package:fl_chart/fl_chart.dart';
@@ -74,6 +75,12 @@ class _AxisChartScaffoldWidgetState extends State<AxisChartScaffoldWidget> {
   late TransformationController _transformationController;
 
   final GlobalKey _chartKey = GlobalKey();
+
+  // Offset to position clamped horizontal lines beyond vertical line labels
+  // Vertical labels with showOnTopOfTheChartBoxArea are positioned outside chart bounds
+  // This offset ensures clamped lines are clearly above/below those labels
+  // but not so far that they're outside the visible container
+  static const double _clampLabelOffset = 25.0;
 
   // Map to store widget sizes and positions for horizontal line right widgets
   final Map<int, Size> _rightWidgetSizes = {};
@@ -260,9 +267,16 @@ class _AxisChartScaffoldWidgetState extends State<AxisChartScaffoldWidget> {
   }
 
   /// Calculates stacking positions for overlapping widgets
-  /// Only includes lines with widgets that are within the visible chart bounds
-  List<({int index, double y, double verticalOffset})>
-      _calculateWidgetPositions(
+  /// Includes lines with widgets that are within the visible chart bounds,
+  /// and optionally clamped widgets for lines outside bounds when clampToBounds is true
+  List<
+      ({
+        int index,
+        double y,
+        double verticalOffset,
+        bool isClamped,
+        bool isClampedToTop
+      })> _calculateWidgetPositions(
     double chartHeight,
     Size viewSize,
     Rect? chartVirtualRect,
@@ -270,36 +284,62 @@ class _AxisChartScaffoldWidgetState extends State<AxisChartScaffoldWidget> {
     final linesWithWidgets = _getHorizontalLinesWithWidgets();
     if (linesWithWidgets.isEmpty) return [];
 
-    final positions = <({int index, double y, double verticalOffset})>[];
+    final positions = <({
+      int index,
+      double y,
+      double verticalOffset,
+      bool isClamped,
+      bool isClampedToTop
+    })>[];
     // Use animated data for positioning if available, otherwise use target data
     final data = widget.animatedData ?? widget.data;
 
+    // Separate clamped and non-clamped widgets
+    final nonClampedPositions = <({int index, double y, double originalY})>[];
+    final topClampedPositions = <({int index, double originalY})>[];
+    final bottomClampedPositions = <({int index, double originalY})>[];
+
     // Calculate Y position for each line
-    // Only include lines with widgets that are within the visible chart bounds
     for (int i = 0; i < linesWithWidgets.length; i++) {
       final lineData = linesWithWidgets[i];
       final line = lineData.line;
       final index = lineData.index;
 
-      // Check if line Y is within chart bounds - if not, skip this widget
+      // Check if line Y is within chart bounds
       final lineWithinYBounds = line.y >= data.minY && line.y <= data.maxY;
-      if (!lineWithinYBounds) {
-        continue;
+
+      if (lineWithinYBounds) {
+        // Calculate pixel Y position without clamping (since we've already filtered for bounds)
+        final pixelY = _getPixelY(
+          line.y,
+          viewSize,
+          chartVirtualRect,
+          shouldClamp: false,
+        );
+        nonClampedPositions.add((index: index, y: pixelY, originalY: line.y));
+      } else if (line.clampToBounds) {
+        // Widget should be clamped to nearest edge
+        // In chart coordinates: higher Y = higher on chart (top), lower Y = lower on chart (bottom)
+        if (line.y > data.maxY) {
+          // Line is above visible area (higher value) → clamp to top edge
+          topClampedPositions.add((index: index, originalY: line.y));
+        } else if (line.y < data.minY) {
+          // Line is below visible area (lower value) → clamp to bottom edge
+          bottomClampedPositions.add((index: index, originalY: line.y));
+        }
+        // If line.y == data.minY or data.maxY, it's within bounds, so this shouldn't happen
       }
-
-      // Calculate pixel Y position without clamping (since we've already filtered for bounds)
-      final pixelY = _getPixelY(
-        line.y,
-        viewSize,
-        chartVirtualRect,
-        shouldClamp: false,
-      );
-
-      positions.add((index: index, y: pixelY, verticalOffset: 0));
+      // If not within bounds and clampToBounds is false, skip this widget
     }
 
-    // Sort by Y position (top to bottom)
-    positions.sort((a, b) => a.y.compareTo(b.y));
+    // Sort non-clamped positions by Y (top to bottom)
+    nonClampedPositions.sort((a, b) => a.y.compareTo(b.y));
+
+    // Sort top-clamped positions by original Y descending (highest Y first, so they stack downward)
+    topClampedPositions.sort((a, b) => b.originalY.compareTo(a.originalY));
+
+    // Sort bottom-clamped positions by original Y ascending (lowest Y first, so they stack upward)
+    bottomClampedPositions.sort((a, b) => a.originalY.compareTo(b.originalY));
 
     // Get maximum stacking spacing from all lines
     double maxStackingSpacing = 0;
@@ -310,24 +350,156 @@ class _AxisChartScaffoldWidgetState extends State<AxisChartScaffoldWidget> {
       }
     }
 
-    // Detect collisions and stack widgets
-    for (int i = 0; i < positions.length; i++) {
-      final currentWidgetSize = _rightWidgetSizes[positions[i].index];
-      final currentHeight = currentWidgetSize?.height ?? 30.0; // fallback
-      final currentY = positions[i].y;
-      final currentLine = linesWithWidgets
-          .firstWhere((l) => l.index == positions[i].index)
-          .line;
+    // Calculate relative tolerance based on Y-axis range (0.5% like candlestick chart)
+    // This ensures duplicate detection works correctly for charts with different value ranges
+    final yRange = data.maxY - data.minY;
+    // Use 0.5% of Y-axis range as tolerance, or minimum 1 pixel worth of value
+    final tolerance = yRange > 0
+        ? max(yRange * 0.005, yRange / 1000)
+        : 0.0001; // Fallback for edge case where range is 0
+
+    // Helper function to check if two widgets should stack based on their data Y values
+    // and whether they're clamped or not
+    bool shouldStackWidgets({
+      required int currentIndex,
+      required double currentDataY,
+      required bool currentIsClamped,
+      required bool currentIsClampedToTop,
+      required int prevIndex,
+      required double prevDataY,
+      required bool prevIsClamped,
+      required bool prevIsClampedToTop,
+    }) {
+      // Clamped and non-clamped widgets should never stack (they're at different data Y positions)
+      if (currentIsClamped != prevIsClamped) {
+        return false;
+      }
+
+      // Both are clamped: only stack if they're at the same edge
+      if (currentIsClamped && prevIsClamped) {
+        return currentIsClampedToTop == prevIsClampedToTop;
+      }
+
+      // Both are non-clamped: only stack if they're at the same/similar data Y value
+      if (!currentIsClamped && !prevIsClamped) {
+        final dataYDiff = (currentDataY - prevDataY).abs();
+        return dataYDiff < tolerance || currentDataY == prevDataY;
+      }
+
+      return false;
+    }
+
+    // Process top-clamped widgets: use collision detection for proper stacking
+    // Account for label offset to position beyond vertical line labels
+    // Vertical labels with showOnTopOfTheChartBoxArea are positioned outside chart bounds
+    const baseClampedY = -_clampLabelOffset; // Base position above chart edge
+    for (final clampedData in topClampedPositions) {
+      final widgetSize = _rightWidgetSizes[clampedData.index];
+      final widgetHeight = widgetSize?.height ?? 30.0;
+      final line =
+          linesWithWidgets.firstWhere((l) => l.index == clampedData.index).line;
+      final stackingSpacing = line.rightWidgetStackingSpacing +
+          data.extraLinesData.rightWidgetAdditionalStackingPadding;
+
+      // Start from base clamped position
+      double currentY = baseClampedY;
+      double maxVerticalOffset = 0;
+
+      // Check for collisions with previously positioned widgets
+      // Only stack with other top-clamped widgets (same edge)
+      for (int j = 0; j < positions.length; j++) {
+        final prevPos = positions[j];
+
+        // Get previous widget's data Y value
+        final prevLineData = linesWithWidgets.firstWhere(
+          (l) => l.index == prevPos.index,
+        );
+        final prevDataY = prevLineData.line.y;
+
+        // Check if widgets should stack based on data Y values and clamp status
+        if (!shouldStackWidgets(
+          currentIndex: clampedData.index,
+          currentDataY: clampedData.originalY,
+          currentIsClamped: true,
+          currentIsClampedToTop: true,
+          prevIndex: prevPos.index,
+          prevDataY: prevDataY,
+          prevIsClamped: prevPos.isClamped,
+          prevIsClampedToTop: prevPos.isClampedToTop,
+        )) {
+          continue; // Skip collision check if they shouldn't stack
+        }
+
+        final prevWidgetSize = _rightWidgetSizes[prevPos.index];
+        final prevHeight = prevWidgetSize?.height ?? 30.0;
+        final prevY = prevPos.y + prevPos.verticalOffset;
+
+        // Check if widgets overlap
+        final currentTop = currentY - widgetHeight / 2;
+        final currentBottom = currentY + widgetHeight / 2;
+        final prevTop = prevY - prevHeight / 2;
+        final prevBottom = prevY + prevHeight / 2;
+
+        if (currentTop < prevBottom + stackingSpacing &&
+            currentBottom > prevTop - stackingSpacing) {
+          // Collision detected - stack below previous widget
+          final offset = prevBottom - currentY + stackingSpacing;
+          if (offset > maxVerticalOffset) {
+            maxVerticalOffset = offset;
+          }
+        }
+      }
+
+      positions.add((
+        index: clampedData.index,
+        y: currentY,
+        verticalOffset: maxVerticalOffset,
+        isClamped: true,
+        isClampedToTop: true,
+      ));
+    }
+
+    // Process non-clamped widgets: use existing collision detection
+    for (int i = 0; i < nonClampedPositions.length; i++) {
+      final posData = nonClampedPositions[i];
+      final currentWidgetSize = _rightWidgetSizes[posData.index];
+      final currentHeight = currentWidgetSize?.height ?? 30.0;
+      final currentY = posData.y;
+      final currentLine =
+          linesWithWidgets.firstWhere((l) => l.index == posData.index).line;
       final currentStackingSpacing = currentLine.rightWidgetStackingSpacing;
       final additionalStackingPadding =
           data.extraLinesData.rightWidgetAdditionalStackingPadding;
       double maxVerticalOffset = 0;
 
       // Check for collisions with previous widgets
-      for (int j = 0; j < i; j++) {
-        final prevWidgetSize = _rightWidgetSizes[positions[j].index];
-        final prevHeight = prevWidgetSize?.height ?? 30.0; // fallback
-        final prevY = positions[j].y + positions[j].verticalOffset;
+      // Only stack with other non-clamped widgets at the same/similar data Y value
+      for (int j = 0; j < positions.length; j++) {
+        final prevPos = positions[j];
+
+        // Get previous widget's data Y value
+        final prevLineData = linesWithWidgets.firstWhere(
+          (l) => l.index == prevPos.index,
+        );
+        final prevDataY = prevLineData.line.y;
+
+        // Check if widgets should stack based on data Y values and clamp status
+        if (!shouldStackWidgets(
+          currentIndex: posData.index,
+          currentDataY: posData.originalY,
+          currentIsClamped: false,
+          currentIsClampedToTop: false,
+          prevIndex: prevPos.index,
+          prevDataY: prevDataY,
+          prevIsClamped: prevPos.isClamped,
+          prevIsClampedToTop: prevPos.isClampedToTop,
+        )) {
+          continue; // Skip collision check if they shouldn't stack
+        }
+
+        final prevWidgetSize = _rightWidgetSizes[prevPos.index];
+        final prevHeight = prevWidgetSize?.height ?? 30.0;
+        final prevY = prevPos.y + prevPos.verticalOffset;
 
         // Check if widgets overlap
         final currentTop = currentY - currentHeight / 2;
@@ -348,14 +520,88 @@ class _AxisChartScaffoldWidgetState extends State<AxisChartScaffoldWidget> {
         }
       }
 
-      if (maxVerticalOffset > 0) {
-        positions[i] = (
-          index: positions[i].index,
-          y: positions[i].y,
-          verticalOffset: maxVerticalOffset,
-        );
-      }
+      positions.add((
+        index: posData.index,
+        y: currentY,
+        verticalOffset: maxVerticalOffset,
+        isClamped: false,
+        isClampedToTop: false,
+      ));
     }
+
+    // Process bottom-clamped widgets: use collision detection for proper stacking
+    // Account for label offset to position beyond vertical line labels
+    // Use the same labelOffset as top-clamped widgets
+    final baseBottomClampedY =
+        chartHeight + _clampLabelOffset; // Base position below chart edge
+    for (final clampedData in bottomClampedPositions) {
+      final widgetSize = _rightWidgetSizes[clampedData.index];
+      final widgetHeight = widgetSize?.height ?? 30.0;
+      final line =
+          linesWithWidgets.firstWhere((l) => l.index == clampedData.index).line;
+      final stackingSpacing = line.rightWidgetStackingSpacing +
+          data.extraLinesData.rightWidgetAdditionalStackingPadding;
+
+      // Start from base clamped position
+      double currentY = baseBottomClampedY;
+      double maxVerticalOffset = 0;
+
+      // Check for collisions with previously positioned widgets
+      // Only stack with other bottom-clamped widgets (same edge)
+      for (int j = 0; j < positions.length; j++) {
+        final prevPos = positions[j];
+
+        // Get previous widget's data Y value
+        final prevLineData = linesWithWidgets.firstWhere(
+          (l) => l.index == prevPos.index,
+        );
+        final prevDataY = prevLineData.line.y;
+
+        // Check if widgets should stack based on data Y values and clamp status
+        if (!shouldStackWidgets(
+          currentIndex: clampedData.index,
+          currentDataY: clampedData.originalY,
+          currentIsClamped: true,
+          currentIsClampedToTop: false,
+          prevIndex: prevPos.index,
+          prevDataY: prevDataY,
+          prevIsClamped: prevPos.isClamped,
+          prevIsClampedToTop: prevPos.isClampedToTop,
+        )) {
+          continue; // Skip collision check if they shouldn't stack
+        }
+
+        final prevWidgetSize = _rightWidgetSizes[prevPos.index];
+        final prevHeight = prevWidgetSize?.height ?? 30.0;
+        final prevY = prevPos.y + prevPos.verticalOffset;
+
+        // Check if widgets overlap
+        final currentTop = currentY - widgetHeight / 2;
+        final currentBottom = currentY + widgetHeight / 2;
+        final prevTop = prevY - prevHeight / 2;
+        final prevBottom = prevY + prevHeight / 2;
+
+        if (currentTop < prevBottom + stackingSpacing &&
+            currentBottom > prevTop - stackingSpacing) {
+          // Collision detected - stack above previous widget (for bottom-clamped, we stack upward)
+          final offset = prevTop - currentY - stackingSpacing;
+          if (offset < maxVerticalOffset) {
+            maxVerticalOffset = offset;
+          }
+        }
+      }
+
+      positions.add((
+        index: clampedData.index,
+        y: currentY,
+        verticalOffset: maxVerticalOffset,
+        isClamped: true,
+        isClampedToTop: false,
+      ));
+    }
+
+    // Final sort by Y position (top to bottom) to ensure proper rendering order
+    positions.sort((a, b) => a.y.compareTo(b.y));
 
     return positions;
   }
@@ -804,7 +1050,15 @@ class _RightWidgetOverlay extends StatefulWidget {
   final Map<int, Size> widgetSizes;
   final AxisChartData data;
   final VoidCallback onMeasure;
-  final List<({int index, double y, double verticalOffset})> Function(
+  final List<
+          ({
+            int index,
+            double y,
+            double verticalOffset,
+            bool isClamped,
+            bool isClampedToTop
+          })>
+      Function(
     double chartHeight,
     Size viewSize,
     Rect? chartVirtualRect,
@@ -819,7 +1073,7 @@ class _RightWidgetOverlay extends StatefulWidget {
 class _RightWidgetOverlayState extends State<_RightWidgetOverlay> {
   // Track previous vertical offsets to detect changes for animation
   final Map<int, double> _previousVerticalOffsets = {};
-  
+
   @override
   void initState() {
     super.initState();
@@ -857,9 +1111,20 @@ class _RightWidgetOverlayState extends State<_RightWidgetOverlay> {
     );
 
     // Build a map from index to position data for quick lookup
-    final positionMap = <int, ({double y, double verticalOffset})>{};
+    final positionMap = <int,
+        ({
+      double y,
+      double verticalOffset,
+      bool isClamped,
+      bool isClampedToTop
+    })>{};
     for (final pos in positions) {
-      positionMap[pos.index] = (y: pos.y, verticalOffset: pos.verticalOffset);
+      positionMap[pos.index] = (
+        y: pos.y,
+        verticalOffset: pos.verticalOffset,
+        isClamped: pos.isClamped,
+        isClampedToTop: pos.isClampedToTop,
+      );
     }
 
     // Check if all widgets have been measured
@@ -899,16 +1164,31 @@ class _RightWidgetOverlayState extends State<_RightWidgetOverlay> {
               Builder(
                 builder: (context) {
                   final index = lineData.index;
+                  final line = lineData.line;
+
+                  // Get position for this widget
                   final position = positionMap[index];
                   if (position == null) return const SizedBox.shrink();
 
-                  final line = lineData.line;
+                  // CRITICAL: Only show line segment for base widgets (verticalOffset == 0)
+                  // This follows the pill stacking logic where the first widget at a Y position
+                  // has verticalOffset == 0 and aligns with the painted horizontal line
+                  // Widgets that are stacked have verticalOffset != 0 and should not show their line segment
+                  const offsetTolerance =
+                      0.001; // Small tolerance for floating point comparison
+                  if (position.verticalOffset.abs() > offsetTolerance) {
+                    // This widget is stacked (not at base position), hide its line segment
+                    return const SizedBox.shrink();
+                  }
+
                   // Y position animates naturally via animatedData - use regular Positioned
                   // Only animate the verticalOffset separately when it changes
-                  final baseY = position.y; // This animates smoothly via animatedData
+                  final baseY =
+                      position.y; // This animates smoothly via animatedData
                   final currentOffset = position.verticalOffset;
-                  final previousOffset = _previousVerticalOffsets[index] ?? currentOffset;
-                  
+                  final previousOffset =
+                      _previousVerticalOffsets[index] ?? currentOffset;
+
                   // Update previous offset after this frame (so current frame uses old value for animation)
                   if (previousOffset != currentOffset) {
                     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -919,37 +1199,53 @@ class _RightWidgetOverlayState extends State<_RightWidgetOverlay> {
                       }
                     });
                   }
-                  
-                  final widgetWidth = constrainedWidth ??
-                      widget.widgetSizes[index]?.width ??
-                      120.0;
-                  final widgetPadding = line.rightWidgetPadding;
 
-                  // Line extends from left edge of overlay (where canvas line ends)
-                  // to where widget starts (right edge minus widget width and padding)
-                  final lineLength =
-                      widget.margin.right - widgetPadding - widgetWidth;
+                  // Line extends from the chart edge (where overlay starts, left: 0)
+                  // to the right edge of the widget (where widget ends)
+                  // Widget is positioned at right: 0, so line should extend to widget.margin.right
+                  final lineLength = widget.margin.right;
                   if (lineLength <= 0) return const SizedBox.shrink();
+
+                  // For clamped widgets, ensure line is positioned beyond chart edges to be above/below labels
+                  // Top-clamped: line at y=0 - _clampLabelOffset (above top edge, beyond labels)
+                  // Bottom-clamped: line at y=chartHeight + _clampLabelOffset (below bottom edge, beyond labels)
+                  // For non-clamped widgets, line is at baseY (before stacking offset) so all stacked widgets share the same line
+                  final lineY = position.isClamped
+                      ? (position.isClampedToTop
+                          ? 0.0 -
+                              _AxisChartScaffoldWidgetState._clampLabelOffset
+                          : chartHeight +
+                              _AxisChartScaffoldWidgetState._clampLabelOffset)
+                      : baseY; // Use baseY directly, not baseY + offset, so line is at base position
+
+                  // Use this widget's own line properties
+                  // When we're at base, we use our own properties
+                  // When we're stacked and there's no base widget, we also use our own properties
+                  final actualLineToUse = line;
 
                   // Use regular Positioned - Y animates via animatedData
                   // Use AnimatedContainer to animate offset changes separately
+                  // For clamped widgets, line is at the edge; for non-clamped, it follows the position
                   return Positioned(
                     left: 0,
-                    top: baseY + previousOffset - line.strokeWidth / 2,
+                    top: lineY - actualLineToUse.strokeWidth / 2,
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 150),
                       curve: Curves.linear,
-                      transform: Matrix4.translationValues(0, currentOffset - previousOffset, 0),
+                      transform: position.isClamped
+                          ? Matrix4.identity()
+                          : Matrix4.translationValues(
+                              0, currentOffset - previousOffset, 0),
                       child: CustomPaint(
                         size: Size(
                           lineLength,
-                          line.strokeWidth,
+                          actualLineToUse.strokeWidth,
                         ),
                         painter: _HorizontalLinePainter(
-                          color: line.color ?? Colors.grey,
-                          strokeWidth: line.strokeWidth,
-                          dashArray: line.dashArray,
-                          strokeCap: line.strokeCap,
+                          color: actualLineToUse.color ?? Colors.grey,
+                          strokeWidth: actualLineToUse.strokeWidth,
+                          dashArray: actualLineToUse.dashArray,
+                          strokeCap: actualLineToUse.strokeCap,
                         ),
                       ),
                     ),
@@ -967,10 +1263,12 @@ class _RightWidgetOverlayState extends State<_RightWidgetOverlay> {
                   // Position is already relative to viewSize (chart content area)
                   // Y position animates naturally via animatedData - use regular Positioned
                   // Only animate the verticalOffset separately when it changes
-                  final baseY = position.y; // This animates smoothly via animatedData
+                  final baseY =
+                      position.y; // This animates smoothly via animatedData
                   final currentOffset = position.verticalOffset;
-                  final previousOffset = _previousVerticalOffsets[index] ?? currentOffset;
-                  
+                  final previousOffset =
+                      _previousVerticalOffsets[index] ?? currentOffset;
+
                   // Update previous offset after this frame (so current frame uses old value for animation)
                   if (previousOffset != currentOffset) {
                     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -981,7 +1279,7 @@ class _RightWidgetOverlayState extends State<_RightWidgetOverlay> {
                       }
                     });
                   }
-                  
+
                   final widgetKey = widget.widgetKeys[index]!;
                   final widgetHeight = widget.widgetSizes[index]?.height ?? 30;
 
@@ -1015,7 +1313,8 @@ class _RightWidgetOverlayState extends State<_RightWidgetOverlay> {
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 150),
                       curve: Curves.linear,
-                      transform: Matrix4.translationValues(0, currentOffset - previousOffset, 0),
+                      transform: Matrix4.translationValues(
+                          0, currentOffset - previousOffset, 0),
                       child: IgnorePointer(
                         ignoring: false,
                         child: RepaintBoundary(

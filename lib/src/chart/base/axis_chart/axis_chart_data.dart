@@ -1086,6 +1086,11 @@ class HorizontalLine extends FlLine with EquatableMixin {
   /// furthest right on the chart). The chart will automatically adjust its right margin
   /// to accommodate the widget. If multiple widgets would overlap, they will stack vertically
   /// in the order the lines appear.
+  ///
+  /// When [clampToBounds] is true and the line's Y value is outside the visible chart bounds,
+  /// both the line and its widget (if present) will be clamped to the nearest chart edge
+  /// (top or bottom) to remain visible. The line will be drawn at the chart edge, positioned
+  /// above the maximum Y value (when above maxY) or below the minimum Y value (when below minY).
   HorizontalLine({
     required this.y,
     HorizontalLineLabel? label,
@@ -1099,6 +1104,7 @@ class HorizontalLine extends FlLine with EquatableMixin {
     this.rightWidget,
     this.rightWidgetPadding = 8.0,
     this.rightWidgetStackingSpacing = 4.0,
+    this.clampToBounds = false,
   }) : label = label ?? HorizontalLineLabel();
 
   /// Draws from left to right of the chart using the [y] value.
@@ -1132,6 +1138,13 @@ class HorizontalLine extends FlLine with EquatableMixin {
   /// Default is 4.0 to keep stacked widgets close together.
   final double rightWidgetStackingSpacing;
 
+  /// When true, lines outside chart bounds (and their widgets, if present) will be clamped
+  /// to the nearest chart edge (top or bottom) to remain visible. The line itself will be
+  /// drawn at the chart edge, positioned above the maximum Y value (when above maxY) or
+  /// below the minimum Y value (when below minY). Multiple clamped widgets will stack
+  /// correctly at the same edge.
+  final bool clampToBounds;
+
   /// Lerps a [HorizontalLine] based on [t] value, check [Tween.lerp].
   static HorizontalLine lerp(HorizontalLine a, HorizontalLine b, double t) =>
       HorizontalLine(
@@ -1145,8 +1158,11 @@ class HorizontalLine extends FlLine with EquatableMixin {
         sizedPicture: b.sizedPicture,
         strokeCap: b.strokeCap,
         rightWidget: b.rightWidget,
-        rightWidgetPadding: lerpDouble(a.rightWidgetPadding, b.rightWidgetPadding, t)!,
-        rightWidgetStackingSpacing: lerpDouble(a.rightWidgetStackingSpacing, b.rightWidgetStackingSpacing, t)!,
+        rightWidgetPadding:
+            lerpDouble(a.rightWidgetPadding, b.rightWidgetPadding, t)!,
+        rightWidgetStackingSpacing: lerpDouble(
+            a.rightWidgetStackingSpacing, b.rightWidgetStackingSpacing, t)!,
+        clampToBounds: b.clampToBounds,
       );
 
   /// Used for equality check, see [EquatableMixin].
@@ -1163,6 +1179,7 @@ class HorizontalLine extends FlLine with EquatableMixin {
         rightWidget,
         rightWidgetPadding,
         rightWidgetStackingSpacing,
+        clampToBounds,
       ];
 }
 

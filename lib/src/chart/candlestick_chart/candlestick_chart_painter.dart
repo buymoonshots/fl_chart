@@ -49,10 +49,10 @@ class CandlestickChartPainter extends AxisChartPainter<CandlestickChartData> {
     super.paint(context, canvasWrapper, holder);
 
     drawAxisSpotIndicator(context, canvasWrapper, holder);
-    
+
     // Determine which candlesticks have lines centered on them for z-ordering
     final candlesticksWithLinesOnTop = _getCandlesticksWithLinesOnTop(holder);
-    
+
     // Draw candlesticks in two passes for z-ordering
     if (!holder.data.extraLinesData.extraLinesOnTop) {
       // Draw candlesticks without lines first
@@ -104,7 +104,7 @@ class CandlestickChartPainter extends AxisChartPainter<CandlestickChartData> {
 
     for (final line in horizontalLines) {
       final lineY = line.y;
-      
+
       for (var i = 0; i < data.candlestickSpots.length; i++) {
         final spot = data.candlestickSpots[i];
         if (!spot.show) continue;
@@ -185,30 +185,30 @@ class CandlestickChartPainter extends AxisChartPainter<CandlestickChartData> {
     if (data.candlestickSizing != null && data.candlestickSpots.isNotEmpty) {
       final sizing = data.candlestickSizing!;
       final usableSize = holder.getChartUsableSize(viewSize);
-      
+
       // Account for internal padding between chart content and right widgets
       final hasRightWidgets = data.extraLinesData.horizontalLines
           .any((line) => line.rightWidget != null);
       final internalPadding = hasRightWidgets
           ? data.extraLinesData.rightWidgetInternalPadding
           : 0.0;
-      
+
       final availableWidth = usableSize.width - internalPadding;
-      final numberOfVisibleCandles = data.candlestickSpots
-          .where((spot) => spot.show)
-          .length;
-      
+      final numberOfVisibleCandles =
+          data.candlestickSpots.where((spot) => spot.show).length;
+
       if (numberOfVisibleCandles > 0) {
         double width;
         if (sizing.minPadding != null) {
           // Calculate width based on minimum padding
-          final totalPadding = sizing.minPadding! * (numberOfVisibleCandles - 1);
+          final totalPadding =
+              sizing.minPadding! * (numberOfVisibleCandles - 1);
           width = (availableWidth - totalPadding) / numberOfVisibleCandles;
         } else {
           // Calculate width based on available space
           width = availableWidth / numberOfVisibleCandles;
         }
-        
+
         // Apply min/max constraints if provided
         if (sizing.minWidth != null && width < sizing.minWidth!) {
           width = sizing.minWidth!;
@@ -216,7 +216,7 @@ class CandlestickChartPainter extends AxisChartPainter<CandlestickChartData> {
         if (sizing.maxWidth != null && width > sizing.maxWidth!) {
           width = sizing.maxWidth!;
         }
-        
+
         calculatedBodyWidth = width;
       }
     }
@@ -250,8 +250,8 @@ class CandlestickChartPainter extends AxisChartPainter<CandlestickChartData> {
 
       // Skip rendering if candlestick is completely outside Y-axis bounds
       // Check if both high and low are outside the visible range
-      final highOutsideBounds = candlestickSpot.high < data.minY ||
-          candlestickSpot.high > data.maxY;
+      final highOutsideBounds =
+          candlestickSpot.high < data.minY || candlestickSpot.high > data.maxY;
       final lowOutsideBounds =
           candlestickSpot.low < data.minY || candlestickSpot.low > data.maxY;
 
@@ -550,39 +550,40 @@ class CandlestickChartPainter extends AxisChartPainter<CandlestickChartData> {
       final painter =
           holder.targetData.candlestickPainter as DefaultCandlestickPainter;
       final style = painter.candlestickStyleProvider(spot, spotIndex);
-      
+
       if (style.bodyWidth != null) {
         bodyWidth = style.bodyWidth!;
       } else {
         // If bodyWidth is null, calculate from CandlestickSizing if configured
         final data = holder.targetData;
-        if (data.candlestickSizing != null && data.candlestickSpots.isNotEmpty) {
+        if (data.candlestickSizing != null &&
+            data.candlestickSpots.isNotEmpty) {
           final sizing = data.candlestickSizing!;
           final usableSize = holder.getChartUsableSize(viewSize);
-          
+
           // Account for internal padding between chart content and right widgets
           final hasRightWidgets = data.extraLinesData.horizontalLines
               .any((line) => line.rightWidget != null);
           final internalPadding = hasRightWidgets
               ? data.extraLinesData.rightWidgetInternalPadding
               : 0.0;
-          
+
           final availableWidth = usableSize.width - internalPadding;
-          final numberOfVisibleCandles = data.candlestickSpots
-              .where((spot) => spot.show)
-              .length;
-          
+          final numberOfVisibleCandles =
+              data.candlestickSpots.where((spot) => spot.show).length;
+
           if (numberOfVisibleCandles > 0) {
             double width;
             if (sizing.minPadding != null) {
               // Calculate width based on minimum padding
-              final totalPadding = sizing.minPadding! * (numberOfVisibleCandles - 1);
+              final totalPadding =
+                  sizing.minPadding! * (numberOfVisibleCandles - 1);
               width = (availableWidth - totalPadding) / numberOfVisibleCandles;
             } else {
               // Calculate width based on available space
               width = availableWidth / numberOfVisibleCandles;
             }
-            
+
             // Apply min/max constraints if provided
             if (sizing.minWidth != null && width < sizing.minWidth!) {
               width = sizing.minWidth!;
@@ -590,7 +591,7 @@ class CandlestickChartPainter extends AxisChartPainter<CandlestickChartData> {
             if (sizing.maxWidth != null && width > sizing.maxWidth!) {
               width = sizing.maxWidth!;
             }
-            
+
             bodyWidth = width;
           }
         }
@@ -718,10 +719,10 @@ class _DynamicWidthCandlestickPainter extends FlCandlestickPainter {
     CandlestickSpot spot,
     int spotIndex,
   ) {
-    final originalStyle = _basePainter.candlestickStyleProvider(spot, spotIndex);
+    final originalStyle =
+        _basePainter.candlestickStyleProvider(spot, spotIndex);
     // Calculate lineWidth from dynamic width if not provided
-    final calculatedLineWidth =
-        originalStyle.lineWidth ?? _dynamicWidth / 4;
+    final calculatedLineWidth = originalStyle.lineWidth ?? _dynamicWidth / 4;
     final modifiedStyle = CandlestickStyle(
       lineColor: originalStyle.lineColor,
       lineWidth: calculatedLineWidth,
@@ -772,7 +773,7 @@ class _DynamicWidthCandlestickPainter extends FlCandlestickPainter {
     final bodyHeight = bodyLowCanvas - bodyHighCanvas;
     final minBodyHeight = bodyHeight > 0 ? 0.0 : 1.0;
     final adjustedBodyLowCanvas = bodyLowCanvas + minBodyHeight;
-    
+
     final bodyRect = Rect.fromLTRB(
       xOffsetInCanvas - effectiveBodyWidth / 2,
       bodyHighCanvas,
