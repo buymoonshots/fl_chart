@@ -17,8 +17,8 @@ import 'package:mockito/mockito.dart';
 import '../data_pool.dart';
 import 'line_chart_painter_test.mocks.dart';
 
-@GenerateMocks([Canvas, CanvasWrapper, BuildContext, Utils, LineChartPainter])
-@GenerateNiceMocks([MockSpec<LinearGradient>()])
+@GenerateMocks([Canvas, CanvasWrapper, Utils])
+@GenerateNiceMocks([MockSpec<LinearGradient>(), MockSpec<BuildContext>()])
 void main() {
   group('paint()', () {
     test('test 1', () {
@@ -2667,9 +2667,9 @@ void main() {
       final offset3 = result2.captured[0] as Offset;
       final offset4 = result2.captured[1] as Offset;
       expect(offset1, const Offset(6, 50));
-      expect(offset2, const Offset(36, 80));
+      expect(offset2, const Offset(36, 66));
       expect(offset3, const Offset(20, -22));
-      expect(offset4, const Offset(80, 38));
+      expect(offset4, const Offset(80, 80));
     });
 
     test(

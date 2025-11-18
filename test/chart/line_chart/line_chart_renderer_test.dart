@@ -11,7 +11,11 @@ import 'package:mockito/mockito.dart';
 import '../data_pool.dart';
 import 'line_chart_renderer_test.mocks.dart';
 
-@GenerateMocks([Canvas, PaintingContext, BuildContext, LineChartPainter])
+@GenerateMocks([Canvas, PaintingContext])
+@GenerateNiceMocks([
+  MockSpec<BuildContext>(),
+  MockSpec<LineChartPainter>(unsupportedMembers: {#drawMask})
+])
 void main() {
   group('LineChartRenderer', () {
     final data = LineChartData(

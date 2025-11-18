@@ -1,5 +1,7 @@
 import 'package:fl_chart_app/presentation/samples/candlestick/candlestick_chart_sample1.dart';
 import 'package:fl_chart_app/presentation/samples/candlestick/candlestick_chart_sample2.dart';
+import 'package:fl_chart_app/presentation/samples/candlestick/candlestick_chart_sample3.dart';
+import 'package:fl_chart_app/presentation/samples/candlestick/candlestick_chart_sample4.dart';
 import 'package:fl_chart_app/util/app_helper.dart';
 
 import 'bar/bar_chart_sample1.dart';
@@ -73,6 +75,8 @@ class ChartSamples {
     ChartType.candlestick: [
       CandlestickChartSample(1, (context) => const CandlestickChartSample1()),
       CandlestickChartSample(2, (context) => const CandlestickChartSample2()),
+      CandlestickChartSample(3, (context) => const CandlestickChartSample3()),
+      CandlestickChartSample(4, (context) => const CandlestickChartSample4()),
     ]
   };
 }

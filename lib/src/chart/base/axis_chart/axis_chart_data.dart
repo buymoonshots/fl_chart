@@ -1080,6 +1080,17 @@ class HorizontalLine extends FlLine with EquatableMixin {
   ///
   /// It draws an image in left side of the chart, use [sizedPicture] for vectors,
   /// or [image] for any kind of image.
+  ///
+  /// You can display a custom widget on the right side of the line using [rightWidget].
+  /// The widget will be positioned at Alignment.centerRight (vertically centered on the line,
+  /// furthest right on the chart). The chart will automatically adjust its right margin
+  /// to accommodate the widget. If multiple widgets would overlap, they will stack vertically
+  /// in the order the lines appear.
+  ///
+  /// When [clampToBounds] is true and the line's Y value is outside the visible chart bounds,
+  /// both the line and its widget (if present) will be clamped to the nearest chart edge
+  /// (top or bottom) to remain visible. The line will be drawn at the chart edge, positioned
+  /// above the maximum Y value (when above maxY) or below the minimum Y value (when below minY).
   HorizontalLine({
     required this.y,
     HorizontalLineLabel? label,
@@ -1090,6 +1101,10 @@ class HorizontalLine extends FlLine with EquatableMixin {
     this.image,
     this.sizedPicture,
     this.strokeCap = StrokeCap.butt,
+    this.rightWidget,
+    this.rightWidgetPadding = 8.0,
+    this.rightWidgetStackingSpacing = 4.0,
+    this.clampToBounds = false,
   }) : label = label ?? HorizontalLineLabel();
 
   /// Draws from left to right of the chart using the [y] value.
@@ -1108,6 +1123,28 @@ class HorizontalLine extends FlLine with EquatableMixin {
   /// i.e. if the two ends of the line is round or butt or square.
   final StrokeCap strokeCap;
 
+  /// Custom widget to display on the right side of the line.
+  /// Positioned at Alignment.centerRight (vertically centered, furthest right).
+  /// The chart will adjust its right margin to accommodate this widget.
+  /// If multiple widgets would overlap, they will stack vertically.
+  final Widget? rightWidget;
+
+  /// Padding/spacing between widgets when they stack vertically.
+  /// Also used as spacing from the right edge of the chart.
+  final double rightWidgetPadding;
+
+  /// Spacing between widgets when they stack vertically due to overlap.
+  /// This is separate from [rightWidgetPadding] which is used for chart edge spacing.
+  /// Default is 4.0 to keep stacked widgets close together.
+  final double rightWidgetStackingSpacing;
+
+  /// When true, lines outside chart bounds (and their widgets, if present) will be clamped
+  /// to the nearest chart edge (top or bottom) to remain visible. The line itself will be
+  /// drawn at the chart edge, positioned above the maximum Y value (when above maxY) or
+  /// below the minimum Y value (when below minY). Multiple clamped widgets will stack
+  /// correctly at the same edge.
+  final bool clampToBounds;
+
   /// Lerps a [HorizontalLine] based on [t] value, check [Tween.lerp].
   static HorizontalLine lerp(HorizontalLine a, HorizontalLine b, double t) =>
       HorizontalLine(
@@ -1120,6 +1157,12 @@ class HorizontalLine extends FlLine with EquatableMixin {
         image: b.image,
         sizedPicture: b.sizedPicture,
         strokeCap: b.strokeCap,
+        rightWidget: b.rightWidget,
+        rightWidgetPadding:
+            lerpDouble(a.rightWidgetPadding, b.rightWidgetPadding, t)!,
+        rightWidgetStackingSpacing: lerpDouble(
+            a.rightWidgetStackingSpacing, b.rightWidgetStackingSpacing, t)!,
+        clampToBounds: b.clampToBounds,
       );
 
   /// Used for equality check, see [EquatableMixin].
@@ -1133,6 +1176,10 @@ class HorizontalLine extends FlLine with EquatableMixin {
         image,
         sizedPicture,
         strokeCap,
+        rightWidget,
+        rightWidgetPadding,
+        rightWidgetStackingSpacing,
+        clampToBounds,
       ];
 }
 
@@ -1421,15 +1468,35 @@ class ExtraLinesData with EquatableMixin {
   ///
   /// If [extraLinesOnTop] sets true, it draws the line above the main bar lines, otherwise
   /// it draws them below the main bar lines.
+  ///
+  /// [rightWidgetInternalPadding] adds internal padding between the chart content
+  /// (candlesticks/bars) and the right widgets. This creates space so the last data point
+  /// doesn't touch the widgets. Lines will still extend to the widget edge.
+  ///
+  /// [rightWidgetAdditionalStackingPadding] adds extra padding between stacked widgets
+  /// beyond the [HorizontalLine.rightWidgetStackingSpacing]. This ensures stacked widgets
+  /// have additional breathing room. Default is 4.0.
   const ExtraLinesData({
     this.horizontalLines = const [],
     this.verticalLines = const [],
     this.extraLinesOnTop = true,
+    this.rightWidgetInternalPadding = 0.0,
+    this.rightWidgetAdditionalStackingPadding = 4.0,
   });
 
   final List<HorizontalLine> horizontalLines;
   final List<VerticalLine> verticalLines;
   final bool extraLinesOnTop;
+
+  /// Internal padding between chart content and right widgets.
+  /// Creates space so the last data point (candle/bar) doesn't touch the widgets.
+  /// Lines still extend all the way to the widget edge. Default is 0.0.
+  final double rightWidgetInternalPadding;
+
+  /// Additional padding between stacked right widgets beyond the per-line
+  /// [HorizontalLine.rightWidgetStackingSpacing]. This provides extra spacing
+  /// for better visual separation when widgets stack. Default is 4.0.
+  final double rightWidgetAdditionalStackingPadding;
 
   /// Lerps a [ExtraLinesData] based on [t] value, check [Tween.lerp].
   static ExtraLinesData lerp(ExtraLinesData a, ExtraLinesData b, double t) =>
@@ -1445,6 +1512,16 @@ class ExtraLinesData with EquatableMixin {
           b.verticalLines,
           t,
         )!,
+        rightWidgetInternalPadding: lerpDouble(
+          a.rightWidgetInternalPadding,
+          b.rightWidgetInternalPadding,
+          t,
+        )!,
+        rightWidgetAdditionalStackingPadding: lerpDouble(
+          a.rightWidgetAdditionalStackingPadding,
+          b.rightWidgetAdditionalStackingPadding,
+          t,
+        )!,
       );
 
   /// Used for equality check, see [EquatableMixin].
@@ -1453,6 +1530,8 @@ class ExtraLinesData with EquatableMixin {
         horizontalLines,
         verticalLines,
         extraLinesOnTop,
+        rightWidgetInternalPadding,
+        rightWidgetAdditionalStackingPadding,
       ];
 }
 
