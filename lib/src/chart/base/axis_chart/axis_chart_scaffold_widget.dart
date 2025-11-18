@@ -732,12 +732,14 @@ class _AxisChartScaffoldWidgetState extends State<AxisChartScaffoldWidget> {
     if (lastSpot == null) return null;
 
     // Check if the last spot is within chart bounds
-    final spotWithinBounds = lastSpot.x >= chartData.minX &&
-        lastSpot.x <= chartData.maxX &&
-        lastSpot.y >= chartData.minY &&
+    // Handle both normal and reversed axis bounds (minX > maxX)
+    final xWithinBounds = chartData.minX <= chartData.maxX
+        ? (lastSpot.x >= chartData.minX && lastSpot.x <= chartData.maxX)
+        : (lastSpot.x <= chartData.minX && lastSpot.x >= chartData.maxX);
+    final yWithinBounds = lastSpot.y >= chartData.minY &&
         lastSpot.y <= chartData.maxY;
 
-    return spotWithinBounds ? lastSpot : null;
+    return (xWithinBounds && yWithinBounds) ? lastSpot : null;
   }
 
   // Applies the inverse transformation to the chart to get the zoomed
