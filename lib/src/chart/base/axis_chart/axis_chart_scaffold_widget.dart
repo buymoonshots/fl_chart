@@ -90,6 +90,9 @@ class _AxisChartScaffoldWidgetState extends State<AxisChartScaffoldWidget> {
   final Map<int, Size> _trailingWidgetSizes = {};
   final Map<int, GlobalKey> _trailingWidgetKeys = {};
 
+  // Track previous right widget padding for smooth animation when widgets are removed
+  double _previousRightWidgetPadding = 0.0;
+
   FlTransformationConfig get _transformationConfig =>
       widget.transformationConfig;
 
@@ -159,10 +162,35 @@ class _AxisChartScaffoldWidgetState extends State<AxisChartScaffoldWidget> {
         }
     }
 
+    // Track padding changes for animation
+    // Calculate previous padding from old widget data to preserve it during animation
+    if (oldWidget.data != widget.data) {
+      // We'll update _previousRightWidgetPadding after measuring widgets
+      // to ensure we have accurate widget sizes
+    }
+
     // Measure right widgets after update
     SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
       _measureRightWidgets();
       _measureTrailingWidgets();
+
+      // Update previous padding after measurement
+      // Use a temporary calculation to get the previous padding value
+      // This helps maintain smooth animation when widgets are removed
+      final currentPadding = _calculateRightWidgetPadding(
+        MediaQuery.of(context)
+            .size
+            .height, // Approximate, will be recalculated in build
+        useTargetData: true,
+      );
+      // Only update if we're not currently animating (no animatedData)
+      // or if the padding has actually changed
+      if (widget.animatedData == null ||
+          (currentPadding - _previousRightWidgetPadding).abs() > 0.01) {
+        // Padding will be updated in the build method with accurate measurements
+      }
     });
   }
 
@@ -177,6 +205,20 @@ class _AxisChartScaffoldWidgetState extends State<AxisChartScaffoldWidget> {
     // Use animated data for positioning if available, otherwise use target data
     final dataToUse = widget.animatedData ?? widget.data;
     final extraLines = dataToUse.extraLinesData.horizontalLines;
+    for (int i = 0; i < extraLines.length; i++) {
+      if (extraLines[i].rightWidget != null) {
+        lines.add((line: extraLines[i], index: i));
+      }
+    }
+    return lines;
+  }
+
+  /// Collects horizontal lines that have rightWidget set from target data only
+  /// Used for calculating target padding during animation
+  List<({HorizontalLine line, int index})>
+      _getHorizontalLinesWithWidgetsFromTarget() {
+    final lines = <({HorizontalLine line, int index})>[];
+    final extraLines = widget.data.extraLinesData.horizontalLines;
     for (int i = 0; i < extraLines.length; i++) {
       if (extraLines[i].rightWidget != null) {
         lines.add((line: extraLines[i], index: i));
@@ -227,9 +269,14 @@ class _AxisChartScaffoldWidgetState extends State<AxisChartScaffoldWidget> {
 
   /// Calculates required right padding for right widgets
   /// Uses the standardized maximum width (all widgets have uniform width)
-  /// Uses target data (not animated) for consistent padding during animations
-  double _calculateRightWidgetPadding(double chartHeight) {
-    final linesWithWidgets = _getHorizontalLinesWithWidgets();
+  /// [useTargetData] if true, uses target data instead of animated data
+  double _calculateRightWidgetPadding(
+    double chartHeight, {
+    bool useTargetData = false,
+  }) {
+    final linesWithWidgets = useTargetData
+        ? _getHorizontalLinesWithWidgetsFromTarget()
+        : _getHorizontalLinesWithWidgets();
     if (linesWithWidgets.isEmpty) return 0;
 
     // Calculate maximum width from all measured widgets (standardized width)
@@ -248,8 +295,8 @@ class _AxisChartScaffoldWidgetState extends State<AxisChartScaffoldWidget> {
       maxWidgetWidth = 120.0;
     }
 
-    // Get maximum padding from all lines (use target data for consistent padding)
-    // This ensures padding doesn't change during animation
+    // Get maximum padding from all lines
+    // Use target data for consistent padding calculation
     double maxPadding = 0;
     final targetLines = widget.data.extraLinesData.horizontalLines;
     for (final lineData in linesWithWidgets) {
@@ -264,6 +311,52 @@ class _AxisChartScaffoldWidgetState extends State<AxisChartScaffoldWidget> {
 
     // Return standardized width + padding
     return maxWidgetWidth + maxPadding;
+  }
+
+  /// Calculates animated right widget padding that lerps between previous and target
+  /// This provides smooth animation when widgets are added or removed
+  double _calculateAnimatedRightWidgetPadding(double chartHeight) {
+    // Calculate target padding (from target data - what we're animating to)
+    final targetPadding = _calculateRightWidgetPadding(
+      chartHeight,
+      useTargetData: true,
+    );
+
+    // If no animated data, we're not animating - use target and update previous
+    if (widget.animatedData == null) {
+      _previousRightWidgetPadding = targetPadding;
+      return targetPadding;
+    }
+
+    // Check widget states
+    final targetLinesWithWidgets = _getHorizontalLinesWithWidgetsFromTarget();
+
+    // Detect if we're removing widgets: target has no widgets but we had padding before
+    final isRemovingWidgets =
+        targetLinesWithWidgets.isEmpty && _previousRightWidgetPadding > 0.01;
+
+    // Normal case: calculate current padding from animated data
+    final currentPadding = _calculateRightWidgetPadding(
+      chartHeight,
+      useTargetData: false,
+    );
+
+    // If we're removing widgets, return 0 (target padding)
+    // AnimatedContainer will animate the margin from (baseMargin.right + previousPadding)
+    // to (baseMargin.right + 0) smoothly
+    if (isRemovingWidgets) {
+      // Return 0 to trigger animation from previous margin to new margin
+      // The previous margin had padding, the new margin has 0 padding
+      // AnimatedContainer will handle the smooth transition
+      return 0;
+    }
+
+    // Update previous padding if it's significantly different
+    if ((currentPadding - _previousRightWidgetPadding).abs() > 0.01) {
+      _previousRightWidgetPadding = currentPadding;
+    }
+
+    return currentPadding;
   }
 
   /// Calculates stacking positions for overlapping widgets
@@ -736,8 +829,8 @@ class _AxisChartScaffoldWidgetState extends State<AxisChartScaffoldWidget> {
     final xWithinBounds = chartData.minX <= chartData.maxX
         ? (lastSpot.x >= chartData.minX && lastSpot.x <= chartData.maxX)
         : (lastSpot.x <= chartData.minX && lastSpot.x >= chartData.maxX);
-    final yWithinBounds = lastSpot.y >= chartData.minY &&
-        lastSpot.y <= chartData.maxY;
+    final yWithinBounds =
+        lastSpot.y >= chartData.minY && lastSpot.y <= chartData.maxY;
 
     return (xWithinBounds && yWithinBounds) ? lastSpot : null;
   }
@@ -829,9 +922,17 @@ class _AxisChartScaffoldWidgetState extends State<AxisChartScaffoldWidget> {
     );
     final adjustedRectForRightPadding =
         _calculateAdjustedRect(rectForRightPadding);
-    final rightWidgetPadding = _calculateRightWidgetPadding(
-      adjustedRectForRightPadding?.height ?? rectForRightPadding.height,
-    );
+    final chartHeight =
+        adjustedRectForRightPadding?.height ?? rectForRightPadding.height;
+
+    // Use animated padding calculation for smooth transitions
+    final rightWidgetPadding =
+        _calculateAnimatedRightWidgetPadding(chartHeight);
+
+    // Update previous padding for next frame (only if not animating or animation complete)
+    if (widget.animatedData == null) {
+      _previousRightWidgetPadding = rightWidgetPadding;
+    }
 
     // Adjust margin to include right widget padding
     final margin = EdgeInsets.only(
@@ -880,7 +981,9 @@ class _AxisChartScaffoldWidgetState extends State<AxisChartScaffoldWidget> {
     };
 
     final widgets = <Widget>[
-      Container(
+      AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.linear,
         margin: margin,
         decoration: BoxDecoration(border: borderData),
         child: child,
