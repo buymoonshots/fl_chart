@@ -528,15 +528,17 @@ class _AxisChartScaffoldWidgetState extends State<AxisChartScaffoldWidget> {
         final prevY = prevPos.y + prevPos.verticalOffset;
 
         // Check if widgets overlap
-        final currentTop = currentY - widgetHeight / 2;
-        final currentBottom = currentY + widgetHeight / 2;
+        // Use currentY + maxVerticalOffset to account for accumulated offset from previous collisions
+        final currentYWithOffset = currentY + maxVerticalOffset;
+        final currentTop = currentYWithOffset - widgetHeight / 2;
+        final currentBottom = currentYWithOffset + widgetHeight / 2;
         final prevTop = prevY - prevHeight / 2;
         final prevBottom = prevY + prevHeight / 2;
 
         if (currentTop < prevBottom + stackingSpacing &&
             currentBottom > prevTop - stackingSpacing) {
           // Collision detected - stack below previous widget
-          final offset = prevBottom - currentY + stackingSpacing;
+          final offset = prevBottom - currentYWithOffset + stackingSpacing;
           if (offset > maxVerticalOffset) {
             maxVerticalOffset = offset;
           }
@@ -595,8 +597,10 @@ class _AxisChartScaffoldWidgetState extends State<AxisChartScaffoldWidget> {
         final prevY = prevPos.y + prevPos.verticalOffset;
 
         // Check if widgets overlap
-        final currentTop = currentY - currentHeight / 2;
-        final currentBottom = currentY + currentHeight / 2;
+        // Use currentY + maxVerticalOffset to account for accumulated offset from previous collisions
+        final currentYWithOffset = currentY + maxVerticalOffset;
+        final currentTop = currentYWithOffset - currentHeight / 2;
+        final currentBottom = currentYWithOffset + currentHeight / 2;
         final prevTop = prevY - prevHeight / 2;
         final prevBottom = prevY + prevHeight / 2;
 
@@ -606,7 +610,7 @@ class _AxisChartScaffoldWidgetState extends State<AxisChartScaffoldWidget> {
         if (currentTop < prevBottom + stackingSpacing &&
             currentBottom > prevTop - stackingSpacing) {
           // Collision detected - stack below previous widget
-          final offset = prevBottom - currentY + stackingSpacing;
+          final offset = prevBottom - currentYWithOffset + stackingSpacing;
           if (offset > maxVerticalOffset) {
             maxVerticalOffset = offset;
           }
@@ -669,15 +673,18 @@ class _AxisChartScaffoldWidgetState extends State<AxisChartScaffoldWidget> {
         final prevY = prevPos.y + prevPos.verticalOffset;
 
         // Check if widgets overlap
-        final currentTop = currentY - widgetHeight / 2;
-        final currentBottom = currentY + widgetHeight / 2;
+        // Use currentY + maxVerticalOffset to account for accumulated offset from previous collisions
+        // For bottom-clamped, maxVerticalOffset is negative (stacking upward)
+        final currentYWithOffset = currentY + maxVerticalOffset;
+        final currentTop = currentYWithOffset - widgetHeight / 2;
+        final currentBottom = currentYWithOffset + widgetHeight / 2;
         final prevTop = prevY - prevHeight / 2;
         final prevBottom = prevY + prevHeight / 2;
 
         if (currentTop < prevBottom + stackingSpacing &&
             currentBottom > prevTop - stackingSpacing) {
           // Collision detected - stack above previous widget (for bottom-clamped, we stack upward)
-          final offset = prevTop - currentY - stackingSpacing;
+          final offset = prevTop - currentYWithOffset - stackingSpacing;
           if (offset < maxVerticalOffset) {
             maxVerticalOffset = offset;
           }
