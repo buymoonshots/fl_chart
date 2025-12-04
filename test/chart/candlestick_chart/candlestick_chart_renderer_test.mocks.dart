@@ -1351,8 +1351,10 @@ class MockCandlestickChartPainter extends _i1.Mock
   void drawCandlesticks(
     _i6.BuildContext? context,
     _i11.CanvasWrapper? canvasWrapper,
-    _i12.PaintHolder<_i13.CandlestickChartData>? holder,
-  ) =>
+    _i12.PaintHolder<_i13.CandlestickChartData>? holder, {
+    Set<int>? skipIndices,
+    Set<int>? onlyIndices,
+  }) =>
       super.noSuchMethod(
         Invocation.method(
           #drawCandlesticks,
@@ -1361,6 +1363,10 @@ class MockCandlestickChartPainter extends _i1.Mock
             canvasWrapper,
             holder,
           ],
+          {
+            #skipIndices: skipIndices,
+            #onlyIndices: onlyIndices,
+          },
         ),
         returnValueForMissingStub: null,
       );
@@ -1419,6 +1425,48 @@ class MockCandlestickChartPainter extends _i1.Mock
           [
             context,
             canvasWrapper,
+            holder,
+          ],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void drawMasks(
+    _i6.BuildContext? context,
+    _i11.CanvasWrapper? canvasWrapper,
+    _i12.PaintHolder<_i13.CandlestickChartData>? holder,
+  ) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #drawMasks,
+          [
+            context,
+            canvasWrapper,
+            holder,
+          ],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void drawMask(
+    _i6.BuildContext? context,
+    _i11.CanvasWrapper? canvasWrapper,
+    _i13.CandlestickMaskData? maskData,
+    _i13.CandlestickSpot? spot,
+    int? spotIndex,
+    _i12.PaintHolder<_i13.CandlestickChartData>? holder,
+  ) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #drawMask,
+          [
+            context,
+            canvasWrapper,
+            maskData,
+            spot,
+            spotIndex,
             holder,
           ],
         ),

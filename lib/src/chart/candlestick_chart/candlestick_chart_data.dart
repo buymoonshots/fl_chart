@@ -56,6 +56,7 @@ class CandlestickChartData extends AxisChartData with EquatableMixin {
     super.rotationQuarterTurns,
     this.touchedPointIndicator,
     this.maskData,
+    this.candlestickSizing,
   })  : candlestickSpots = candlestickSpots ?? const [],
         candlestickPainter = candlestickPainter ?? DefaultCandlestickPainter(),
         candlestickTouchData = candlestickTouchData ?? CandlestickTouchData(),
@@ -118,6 +119,9 @@ class CandlestickChartData extends AxisChartData with EquatableMixin {
   /// Configuration for drawing masks when a point is selected
   final CandlestickMaskData? maskData;
 
+  /// Configuration for sizing candlesticks dynamically
+  final CandlestickSizing? candlestickSizing;
+
   /// Lerps a [CandlestickChartData] based on [t] value, check [Tween.lerp].
   @override
   CandlestickChartData lerp(BaseChartData a, BaseChartData b, double t) {
@@ -157,6 +161,7 @@ class CandlestickChartData extends AxisChartData with EquatableMixin {
         rotationQuarterTurns: b.rotationQuarterTurns,
         touchedPointIndicator: b.touchedPointIndicator,
         maskData: b.maskData,
+        candlestickSizing: b.candlestickSizing,
       );
     } else {
       throw Exception('Illegal State');
@@ -186,6 +191,7 @@ class CandlestickChartData extends AxisChartData with EquatableMixin {
     int? rotationQuarterTurns,
     AxisSpotIndicator? touchedPointIndicator,
     CandlestickMaskData? maskData,
+    CandlestickSizing? candlestickSizing,
   }) =>
       CandlestickChartData(
         candlestickSpots: candlestickSpots ?? this.candlestickSpots,
@@ -210,6 +216,7 @@ class CandlestickChartData extends AxisChartData with EquatableMixin {
         touchedPointIndicator:
             touchedPointIndicator ?? this.touchedPointIndicator,
         maskData: maskData ?? this.maskData,
+        candlestickSizing: candlestickSizing ?? this.candlestickSizing,
       );
 
   /// Used for equality check, see [EquatableMixin].
@@ -235,6 +242,7 @@ class CandlestickChartData extends AxisChartData with EquatableMixin {
         rotationQuarterTurns,
         touchedPointIndicator,
         maskData,
+        candlestickSizing,
       ];
 }
 
@@ -865,7 +873,11 @@ class DefaultCandlestickPainter extends FlCandlestickPainter {
     final bodyHighCanvas = min(openYOffsetInCanvas, closeYOffsetInCanvas);
     final bodyLowCanvas = max(openYOffsetInCanvas, closeYOffsetInCanvas);
 
-    if (style.lineWidth > 0 && style.lineColor.a > 0) {
+    // Use defaults when widths are null (for backward compatibility)
+    final effectiveBodyWidth = style.bodyWidth ?? 4.0;
+    final effectiveLineWidth = style.lineWidth ?? 1.5;
+
+    if (effectiveLineWidth > 0 && style.lineColor.a > 0) {
       canvas
         // Bottom line
         ..drawLine(
@@ -873,7 +885,7 @@ class DefaultCandlestickPainter extends FlCandlestickPainter {
           Offset(xOffsetInCanvas, bodyLowCanvas),
           _linePainter
             ..color = style.lineColor
-            ..strokeWidth = style.lineWidth,
+            ..strokeWidth = effectiveLineWidth,
         )
         // Top line
         ..drawLine(
@@ -881,18 +893,23 @@ class DefaultCandlestickPainter extends FlCandlestickPainter {
           Offset(xOffsetInCanvas, bodyHighCanvas),
           _linePainter
             ..color = style.lineColor
-            ..strokeWidth = style.lineWidth,
+            ..strokeWidth = effectiveLineWidth,
         );
     }
 
     // Body
+    // For flat candles (open == close), ensure minimum height for visibility
+    final bodyHeight = bodyLowCanvas - bodyHighCanvas;
+    final minBodyHeight = bodyHeight > 0 ? 0.0 : 1.0;
+    final adjustedBodyLowCanvas = bodyLowCanvas + minBodyHeight;
+    
     final bodyRect = Rect.fromLTRB(
-      xOffsetInCanvas - style.bodyWidth / 2,
+      xOffsetInCanvas - effectiveBodyWidth / 2,
       bodyHighCanvas,
-      xOffsetInCanvas + style.bodyWidth / 2,
-      bodyLowCanvas,
+      xOffsetInCanvas + effectiveBodyWidth / 2,
+      adjustedBodyLowCanvas,
     );
-    if (style.bodyFillColor.a > 0 && style.bodyWidth > 0) {
+    if (style.bodyFillColor.a > 0 && effectiveBodyWidth > 0) {
       canvas.drawRRect(
         RRect.fromRectAndRadius(
           bodyRect,
@@ -948,11 +965,11 @@ class DefaultCandlestickPainter extends FlCandlestickPainter {
 class CandlestickStyle with EquatableMixin {
   const CandlestickStyle({
     required this.lineColor,
-    required this.lineWidth,
+    this.lineWidth,
     required this.bodyStrokeColor,
     required this.bodyStrokeWidth,
     required this.bodyFillColor,
-    required this.bodyWidth,
+    this.bodyWidth,
     required this.bodyRadius,
   });
 
@@ -960,7 +977,9 @@ class CandlestickStyle with EquatableMixin {
   final Color lineColor;
 
   /// The width of the candlestick line.
-  final double lineWidth;
+  /// If null, will be calculated from bodyWidth (typically bodyWidth / 4)
+  /// when CandlestickSizing is configured.
+  final double? lineWidth;
 
   /// The color of the candlestick body stroke.
   final Color bodyStrokeColor;
@@ -972,7 +991,8 @@ class CandlestickStyle with EquatableMixin {
   final Color bodyFillColor;
 
   /// The width of the candlestick body.
-  final double bodyWidth;
+  /// If null, will be calculated from CandlestickSizing configuration.
+  final double? bodyWidth;
 
   /// The radius of the corners of the candlestick body.
   final double bodyRadius;
@@ -985,11 +1005,15 @@ class CandlestickStyle with EquatableMixin {
   ) =>
       CandlestickStyle(
         lineColor: Color.lerp(a.lineColor, b.lineColor, t)!,
-        lineWidth: lerpDouble(a.lineWidth, b.lineWidth, t)!,
+        lineWidth: a.lineWidth != null && b.lineWidth != null
+            ? lerpDouble(a.lineWidth, b.lineWidth, t)
+            : b.lineWidth,
         bodyStrokeColor: Color.lerp(a.bodyStrokeColor, b.bodyStrokeColor, t)!,
         bodyStrokeWidth: lerpDouble(a.bodyStrokeWidth, b.bodyStrokeWidth, t)!,
         bodyFillColor: Color.lerp(a.bodyFillColor, b.bodyFillColor, t)!,
-        bodyWidth: lerpDouble(a.bodyWidth, b.bodyWidth, t)!,
+        bodyWidth: a.bodyWidth != null && b.bodyWidth != null
+            ? lerpDouble(a.bodyWidth, b.bodyWidth, t)
+            : b.bodyWidth,
         bodyRadius: lerpDouble(a.bodyRadius, b.bodyRadius, t)!,
       );
 
@@ -1084,4 +1108,56 @@ enum CandlestickMaskPosition {
 
   /// Mask appears above the horizontal line
   top,
+}
+
+/// Configuration for sizing candlesticks in the chart
+class CandlestickSizing with EquatableMixin {
+  /// Creates a sizing configuration for candlesticks
+  ///
+  /// If [minWidth] and [maxWidth] are provided, candles will be sized dynamically
+  /// based on available space, clamped between these values.
+  ///
+  /// If [minPadding] is provided, candle width will be calculated to ensure
+  /// at least this much padding between candles.
+  ///
+  /// If neither is provided, uses fixed width from the style provider.
+  const CandlestickSizing({
+    this.minWidth,
+    this.maxWidth,
+    this.minPadding,
+  }) : assert(
+          minWidth == null || maxWidth == null || minWidth <= maxWidth,
+          'minWidth must be <= maxWidth',
+        );
+
+  /// Minimum width for dynamic sizing (in pixels)
+  final double? minWidth;
+
+  /// Maximum width for dynamic sizing (in pixels)
+  final double? maxWidth;
+
+  /// Minimum padding between candles (in pixels)
+  /// When set, candle width is calculated as: (availableWidth - totalPadding) / numberOfCandles
+  final double? minPadding;
+
+  /// Copies current [CandlestickSizing] to a new [CandlestickSizing],
+  /// and replaces provided values.
+  CandlestickSizing copyWith({
+    double? minWidth,
+    double? maxWidth,
+    double? minPadding,
+  }) =>
+      CandlestickSizing(
+        minWidth: minWidth ?? this.minWidth,
+        maxWidth: maxWidth ?? this.maxWidth,
+        minPadding: minPadding ?? this.minPadding,
+      );
+
+  /// Used for equality check, see [EquatableMixin].
+  @override
+  List<Object?> get props => [
+        minWidth,
+        maxWidth,
+        minPadding,
+      ];
 }
